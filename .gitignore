@@ -1,0 +1,17 @@
+# Node
+node_modules/
+
+# Vite build
+dist/
+
+# Java / Spring Boot
+target/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
