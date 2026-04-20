@@ -32,9 +32,6 @@ public class ScorecardHandicapService {
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found: " + scorecardId));
 
         Round round = scorecard.getRound();
-        if (Boolean.TRUE.equals(round.getFinalized())) {
-            throw new IllegalStateException("Cannot change tee after round is finalized");
-        }
 
         RoundTee targetRoundTee = useAlternateTee ? round.getAlternateRoundTee() : round.getStandardRoundTee();
         if (targetRoundTee == null) {
@@ -48,7 +45,7 @@ public class ScorecardHandicapService {
         scorecardRepository.save(scorecard);
         scoringService.recalculate(scorecardId);
     }
-
+    
     @Transactional
     public void refreshHandicaps(Long scorecardId) {
         Scorecard scorecard = scorecardRepository.findById(scorecardId)
@@ -61,10 +58,19 @@ public class ScorecardHandicapService {
 
     @Transactional
     public void refreshRoundHandicaps(Long roundId) {
+        refreshRoundHandicapsInternal(roundId, false);
+    }
+
+    @Transactional
+    public void refreshRoundHandicapsForCorrection(Long roundId) {
+        refreshRoundHandicapsInternal(roundId, true);
+    }
+
+    private void refreshRoundHandicapsInternal(Long roundId, boolean allowFinalized) {
         List<Scorecard> scorecards = scorecardRepository.findByRound_Id(roundId);
 
         for (Scorecard scorecard : scorecards) {
-            if (Boolean.TRUE.equals(scorecard.getRound().getFinalized())) {
+            if (!allowFinalized && Boolean.TRUE.equals(scorecard.getRound().getFinalized())) {
                 throw new IllegalStateException("Cannot refresh handicaps after round is finalized");
             }
 

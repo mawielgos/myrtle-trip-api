@@ -56,6 +56,8 @@ public interface ScoreHistoryEntryRepository extends JpaRepository<ScoreHistoryE
 
     boolean existsByRound_IdAndPlayer_Id(Long roundId, Long playerId);
 
+    Optional<ScoreHistoryEntry> findByRound_IdAndPlayer_Id(Long roundId, Long playerId);
+
     long countByHandicapGroupCode(String handicapGroupCode);
 
     long countByHandicapGroupCodeAndSourceTypeAndManualDifferentialRequiredTrue(

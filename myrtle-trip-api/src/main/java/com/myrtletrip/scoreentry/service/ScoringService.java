@@ -12,6 +12,7 @@ import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.scorehistory.service.RoundScoreHistorySyncService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,13 +26,16 @@ public class ScoringService {
     private final HoleScoreRepository holeRepo;
     private final ScorecardRepository scorecardRepo;
     private final RoundTeeHoleRepository roundTeeHoleRepository;
+    private final RoundScoreHistorySyncService roundScoreHistorySyncService;
 
     public ScoringService(HoleScoreRepository holeRepo,
                           ScorecardRepository scorecardRepo,
-                          RoundTeeHoleRepository roundTeeHoleRepository) {
+                          RoundTeeHoleRepository roundTeeHoleRepository,
+                          RoundScoreHistorySyncService roundScoreHistorySyncService) {
         this.holeRepo = holeRepo;
         this.scorecardRepo = scorecardRepo;
         this.roundTeeHoleRepository = roundTeeHoleRepository;
+        this.roundScoreHistorySyncService = roundScoreHistorySyncService;
     }
 
     @Transactional
@@ -47,9 +51,6 @@ public class ScoringService {
         Scorecard scorecard = scorecardRepo.findById(scorecardId)
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
 
-        if (Boolean.TRUE.equals(scorecard.getRound().getFinalized())) {
-            throw new IllegalStateException("Round is already finalized");
-        }
 
         HoleScore hole = holeRepo.findByScorecard_IdAndHoleNumber(scorecardId, holeNumber)
                 .orElseGet(() -> {
@@ -70,9 +71,6 @@ public class ScoringService {
         Scorecard scorecard = scorecardRepo.findById(scorecardId)
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
 
-        if (Boolean.TRUE.equals(scorecard.getRound().getFinalized())) {
-            throw new IllegalStateException("Round is already finalized");
-        }
 
         recalculateScorecard(scorecardId);
     }
@@ -227,6 +225,10 @@ public class ScoringService {
         }
 
         scorecardRepo.save(scorecard);
+
+        if (Boolean.TRUE.equals(round.getFinalized())) {
+            roundScoreHistorySyncService.syncFinalizedScorecard(scorecard);
+        }
     }
 
     private boolean isScramble(Round round) {

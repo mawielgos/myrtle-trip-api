@@ -2,8 +2,6 @@ package com.myrtletrip.round.service;
 
 import com.myrtletrip.round.dto.BulkRoundScoreRequest;
 import com.myrtletrip.round.dto.PlayerBulkScoreDto;
-import com.myrtletrip.round.entity.Round;
-import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
@@ -19,35 +17,31 @@ import java.util.Map;
 @Service
 public class BulkScoreEntryService {
 
-    private final RoundRepository roundRepository;
     private final ScorecardRepository scorecardRepository;
     private final HoleScoreRepository holeScoreRepository;
     private final ScoringService scoringService;
+    private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
 
-    public BulkScoreEntryService(RoundRepository roundRepository,
-                                 ScorecardRepository scorecardRepository,
+    public BulkScoreEntryService(ScorecardRepository scorecardRepository,
                                  HoleScoreRepository holeScoreRepository,
-                                 ScoringService scoringService) {
-        this.roundRepository = roundRepository;
+                                 ScoringService scoringService,
+                                 RoundRecalculationOrchestrationService roundRecalculationOrchestrationService) {
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
         this.scoringService = scoringService;
+        this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
     }
 
     @Transactional
     public void saveBulkScores(Long roundId, BulkRoundScoreRequest request) {
-        Round round = roundRepository.findById(roundId)
-                .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
-
-        if (Boolean.TRUE.equals(round.getFinalized())) {
-            throw new IllegalStateException("Round is already finalized");
-        }
-
         if (request == null || request.getScorecards() == null || request.getScorecards().isEmpty()) {
             throw new IllegalArgumentException("No scorecards supplied");
         }
 
         List<Scorecard> roundScorecards = scorecardRepository.findByRound_Id(roundId);
+        if (roundScorecards.isEmpty()) {
+            throw new IllegalArgumentException("Round not found or has no scorecards: " + roundId);
+        }
 
         Map<Long, Scorecard> scorecardByPlayerId = new HashMap<>();
         for (Scorecard scorecard : roundScorecards) {
@@ -67,6 +61,8 @@ public class BulkScoreEntryService {
             saveOrUpdateHoleScores(scorecard, dto.getHoles());
             scoringService.recalculate(scorecard.getId());
         }
+
+        roundRecalculationOrchestrationService.handlePostRoundChange(roundId);
     }
 
     private void validate(PlayerBulkScoreDto dto) {

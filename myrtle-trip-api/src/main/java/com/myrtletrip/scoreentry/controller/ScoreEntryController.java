@@ -1,5 +1,6 @@
 package com.myrtletrip.scoreentry.controller;
 
+import com.myrtletrip.round.service.RoundRecalculationOrchestrationService;
 import com.myrtletrip.scoreentry.dto.RoundScorecardResponse;
 import com.myrtletrip.scoreentry.service.ScoringService;
 import jakarta.validation.Valid;
@@ -15,9 +16,12 @@ import java.util.List;
 public class ScoreEntryController {
 
     private final ScoringService scoringService;
+    private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
 
-    public ScoreEntryController(ScoringService scoringService) {
+    public ScoreEntryController(ScoringService scoringService,
+                                RoundRecalculationOrchestrationService roundRecalculationOrchestrationService) {
         this.scoringService = scoringService;
+        this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
     }
 
     @PutMapping("/{scorecardId}/holes/{holeNumber}")
@@ -25,14 +29,16 @@ public class ScoreEntryController {
             @PathVariable Long scorecardId,
             @Min(1) @Max(18) @PathVariable int holeNumber,
             @Valid @RequestBody HoleRequest request) {
-    	
+
         scoringService.updateHoleScore(scorecardId, holeNumber, request.strokes());
+        roundRecalculationOrchestrationService.handlePostScorecardChange(scorecardId);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{scorecardId}/recalculate")
     public ResponseEntity<Void> recalculateScorecard(@PathVariable Long scorecardId) {
         scoringService.recalculate(scorecardId);
+        roundRecalculationOrchestrationService.handlePostScorecardChange(scorecardId);
         return ResponseEntity.ok().build();
     }
 

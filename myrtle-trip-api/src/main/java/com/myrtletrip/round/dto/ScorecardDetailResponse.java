@@ -14,6 +14,7 @@ public class ScorecardDetailResponse {
     private Integer adjustedGrossScore;
     private Integer netScore;
     private String teeName;
+    private Boolean useAlternateTee;
     private String alternateTeeName;
     private String currentTeeName;
     private List<ScorecardHoleResponse> holes = new ArrayList<>();
@@ -90,6 +91,14 @@ public class ScorecardDetailResponse {
         this.teeName = teeName;
     }
 
+    public Boolean getUseAlternateTee() {
+        return useAlternateTee;
+    }
+
+    public void setUseAlternateTee(Boolean useAlternateTee) {
+        this.useAlternateTee = useAlternateTee;
+    }
+    
     public String getAlternateTeeName() {
         return alternateTeeName;
     }

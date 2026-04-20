@@ -136,6 +136,7 @@ public class RoundQueryService {
         dto.setNetScore(scorecard.getNetScore());
         dto.setTeeName(resolveStandardTeeName(scorecard.getRound()));
         dto.setAlternateTeeName(resolveAlternateTeeName(scorecard.getRound()));
+        dto.setUseAlternateTee(isUsingAlternateTee(scorecard));
         dto.setCurrentTeeName(resolveCurrentTeeName(scorecard));
 
         return dto;

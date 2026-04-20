@@ -13,6 +13,7 @@ public class RoundScorecardSummaryResponse {
     private Integer adjustedGrossScore;
     private Integer netScore;
     private String teeName;
+    private Boolean useAlternateTee;
     private String alternateTeeName;
     private String currentTeeName;
 
@@ -104,6 +105,14 @@ public class RoundScorecardSummaryResponse {
         this.teeName = teeName;
     }
 
+    public Boolean getUseAlternateTee() {
+        return useAlternateTee;
+    }
+
+    public void setUseAlternateTee(Boolean useAlternateTee) {
+        this.useAlternateTee = useAlternateTee;
+    }
+    
     public String getAlternateTeeName() {
         return alternateTeeName;
     }

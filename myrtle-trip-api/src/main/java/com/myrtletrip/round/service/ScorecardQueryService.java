@@ -55,7 +55,7 @@ public class ScorecardQueryService {
                 ? scorecard.getRound().getAlternateRoundTee().getTeeName()
                 : null);
         response.setCurrentTeeName(resolveCurrentTeeName(scorecard));
-
+        response.setUseAlternateTee(isUsingAlternateTee(scorecard));
         Map<Integer, HoleScore> holeScoreByNumber = new HashMap<>();
         for (HoleScore holeScore : holeScores) {
             if (holeScore.getHoleNumber() != null) {
@@ -94,7 +94,25 @@ public class ScorecardQueryService {
 
         return response;
     }
+    private boolean isUsingAlternateTee(Scorecard scorecard) {
+        if (scorecard == null || scorecard.getRound() == null) {
+            return false;
+        }
 
+        RoundTee currentRoundTee = scorecard.getRoundTee();
+        RoundTee alternateRoundTee = scorecard.getRound().getAlternateRoundTee();
+
+        if (currentRoundTee == null || alternateRoundTee == null) {
+            return false;
+        }
+
+        if (currentRoundTee.getId() == null || alternateRoundTee.getId() == null) {
+            return false;
+        }
+
+        return currentRoundTee.getId().equals(alternateRoundTee.getId());
+    }
+    
     private String resolveCurrentTeeName(Scorecard scorecard) {
         RoundTee roundTee = scorecard.getRoundTee();
         return roundTee != null ? roundTee.getTeeName() : null;
