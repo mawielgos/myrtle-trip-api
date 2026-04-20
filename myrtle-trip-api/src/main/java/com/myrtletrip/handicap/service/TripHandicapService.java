@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Service
 @Transactional(readOnly = true)
@@ -156,12 +157,7 @@ public class TripHandicapService {
     public BigDecimal calculateMyrtleBeachTripIndex(Player player, String handicapGroupCode) {
         validateInputs(player, handicapGroupCode);
 
-        List<BigDecimal> newestSixDifferentials = scoreHistoryEntryRepository
-                .findByPlayerAndHandicapGroupCodeAndSourceTypeIn(
-                        player,
-                        handicapGroupCode,
-                        Set.of(SOURCE_MYRTLE_FROZEN, SOURCE_TRIP_ROUND)
-                ).stream()
+        List<BigDecimal> newestSixDifferentials = loadMyrtleBeachEligibleEntries(player, handicapGroupCode).stream()
                 .filter(e -> e.getDifferential() != null)
                 .sorted(Comparator.comparing(ScoreHistoryEntry::getScoreDate).reversed()
                         .thenComparing(ScoreHistoryEntry::getId, Comparator.reverseOrder()))
@@ -176,12 +172,7 @@ public class TripHandicapService {
     public BigDecimal calculateMyrtleBeachTripIndexAsOf(Player player, String handicapGroupCode, LocalDate asOfDate) {
         validateInputs(player, handicapGroupCode);
 
-        List<BigDecimal> newestSixDifferentials = scoreHistoryEntryRepository
-                .findByPlayerAndHandicapGroupCodeAndSourceTypeIn(
-                        player,
-                        handicapGroupCode,
-                        Set.of(SOURCE_MYRTLE_FROZEN, SOURCE_TRIP_ROUND)
-                ).stream()
+        List<BigDecimal> newestSixDifferentials = loadMyrtleBeachEligibleEntries(player, handicapGroupCode).stream()
                 .filter(e -> e.getDifferential() != null)
                 .filter(e -> isEligibleAsOf(e, asOfDate))
                 .sorted(Comparator.comparing(ScoreHistoryEntry::getScoreDate).reversed()
@@ -192,6 +183,21 @@ public class TripHandicapService {
                 .toList();
 
         return calculateMyrtleBeachIndexFromDifferentials(newestSixDifferentials);
+    }
+
+    private List<ScoreHistoryEntry> loadMyrtleBeachEligibleEntries(Player player, String handicapGroupCode) {
+        List<ScoreHistoryEntry> frozenEntries = scoreHistoryEntryRepository
+                .findByPlayerAndSourceTypeIn(player, Set.of(SOURCE_MYRTLE_FROZEN));
+
+        List<ScoreHistoryEntry> tripRoundEntries = scoreHistoryEntryRepository
+                .findByPlayerAndHandicapGroupCodeAndSourceTypeIn(
+                        player,
+                        handicapGroupCode,
+                        Set.of(SOURCE_TRIP_ROUND)
+                );
+
+        return Stream.concat(frozenEntries.stream(), tripRoundEntries.stream())
+                .toList();
     }
 
     private int compareForGhinTripOrder(ScoreHistoryEntry a, ScoreHistoryEntry b) {
@@ -224,7 +230,7 @@ public class TripHandicapService {
                 return -1;
             }
 
-            int dateCompare = bDate.compareTo(aDate); // newest first
+            int dateCompare = bDate.compareTo(aDate);
             if (dateCompare != 0) {
                 return dateCompare;
             }
@@ -241,7 +247,7 @@ public class TripHandicapService {
                 return -1;
             }
 
-            return bId.compareTo(aId); // higher id first
+            return bId.compareTo(aId);
         }
 
         if (aTrip) {

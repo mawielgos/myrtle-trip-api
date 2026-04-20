@@ -2,10 +2,15 @@ package com.myrtletrip.round.service;
 
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.player.repository.PlayerRepository;
-import com.myrtletrip.round.dto.*;
+import com.myrtletrip.round.dto.RoundTeamPlayerRequest;
+import com.myrtletrip.round.dto.RoundTeamPlayerResponse;
+import com.myrtletrip.round.dto.RoundTeamRequest;
+import com.myrtletrip.round.dto.RoundTeamResponse;
+import com.myrtletrip.round.dto.SaveRoundTeamsRequest;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTeamPlayer;
+import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
@@ -27,22 +32,29 @@ public class RoundTeamService {
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final PlayerRepository playerRepository;
     private final ScorecardRepository scorecardRepository;
+    private final ScorecardHandicapService scorecardHandicapService;
+    private final RoundGroupAutoAssignmentService roundGroupAutoAssignmentService;
 
-    public RoundTeamService(RoundRepository roundRepository,
-                            RoundTeamRepository roundTeamRepository,
-                            RoundTeamPlayerRepository roundTeamPlayerRepository,
-                            PlayerRepository playerRepository,
-                            ScorecardRepository scorecardRepository) {
+    public RoundTeamService(
+            RoundRepository roundRepository,
+            RoundTeamRepository roundTeamRepository,
+            RoundTeamPlayerRepository roundTeamPlayerRepository,
+            PlayerRepository playerRepository,
+            ScorecardRepository scorecardRepository,
+            ScorecardHandicapService scorecardHandicapService,
+            RoundGroupAutoAssignmentService roundGroupAutoAssignmentService
+    ) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.playerRepository = playerRepository;
         this.scorecardRepository = scorecardRepository;
+        this.scorecardHandicapService = scorecardHandicapService;
+        this.roundGroupAutoAssignmentService = roundGroupAutoAssignmentService;
     }
 
     @Transactional
     public List<RoundTeamResponse> saveTeams(Long roundId, SaveRoundTeamsRequest request) {
-
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found"));
 
@@ -63,7 +75,7 @@ public class RoundTeamService {
             throw new IllegalArgumentException("At least one team is required");
         }
 
-        validateRequest(request, format);
+        validateRequest(request, format, round);
 
         List<Scorecard> existingScorecards = scorecardRepository.findByRound_Id(roundId);
         for (Scorecard scorecard : existingScorecards) {
@@ -79,28 +91,49 @@ public class RoundTeamService {
             roundTeam.setRound(round);
             roundTeam.setTeamNumber(teamRequest.getTeamNumber());
             roundTeam.setTeamName(teamRequest.getTeamName());
-
             roundTeam = roundTeamRepository.save(roundTeam);
 
             for (RoundTeamPlayerRequest playerRequest : teamRequest.getPlayers()) {
                 Player player = playerRepository.findById(playerRequest.getPlayerId())
-                        .orElseThrow(() -> new IllegalArgumentException("Player not found: " + playerRequest.getPlayerId()));
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Player not found: " + playerRequest.getPlayerId()
+                        ));
 
                 RoundTeamPlayer roundTeamPlayer = new RoundTeamPlayer();
                 roundTeamPlayer.setRoundTeam(roundTeam);
                 roundTeamPlayer.setPlayer(player);
                 roundTeamPlayer.setPlayerOrder(playerRequest.getPlayerOrder());
-
                 roundTeamPlayerRepository.save(roundTeamPlayer);
 
-                Scorecard scorecard = scorecardRepository.findByRound_IdAndPlayer_Id(roundId, player.getId())
+                Scorecard scorecard = scorecardRepository.findById(playerRequest.getScorecardId())
                         .orElseThrow(() -> new IllegalStateException(
-                                "Scorecard not found for round " + roundId + " and player " + player.getId()
+                                "Scorecard not found: " + playerRequest.getScorecardId()
                         ));
+
+                if (!scorecard.getRound().getId().equals(roundId)) {
+                    throw new IllegalStateException(
+                            "Scorecard " + playerRequest.getScorecardId()
+                                    + " does not belong to round " + roundId
+                    );
+                }
+
+                if (!scorecard.getPlayer().getId().equals(player.getId())) {
+                    throw new IllegalStateException(
+                            "Scorecard " + playerRequest.getScorecardId()
+                                    + " does not belong to player " + player.getId()
+                    );
+                }
 
                 scorecard.setTeam(roundTeam);
                 scorecardRepository.save(scorecard);
+
+                boolean useAlternateTee = Boolean.TRUE.equals(playerRequest.getUseAlternateTee());
+                scorecardHandicapService.setAlternateTee(scorecard.getId(), useAlternateTee);
             }
+        }
+
+        if (format == RoundFormat.TWO_MAN_LOW_NET) {
+            roundGroupAutoAssignmentService.syncGroupsFromTeamsIfNeeded(roundId);
         }
 
         return getTeams(roundId);
@@ -108,7 +141,6 @@ public class RoundTeamService {
 
     @Transactional(readOnly = true)
     public List<RoundTeamResponse> getTeams(Long roundId) {
-
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found"));
 
@@ -138,7 +170,10 @@ public class RoundTeamService {
                         playerResponse.setPlayerOrder(tp.getPlayerOrder());
 
                         scorecardRepository.findByRound_IdAndPlayer_Id(roundId, tp.getPlayer().getId())
-                                .ifPresent(scorecard -> playerResponse.setScorecardId(scorecard.getId()));
+                                .ifPresent(scorecard -> {
+                                    playerResponse.setScorecardId(scorecard.getId());
+                                    playerResponse.setUseAlternateTee(isUsingAlternateTee(scorecard, round));
+                                });
 
                         return playerResponse;
                     })
@@ -149,7 +184,7 @@ public class RoundTeamService {
         }).toList();
     }
 
-    private void validateRequest(SaveRoundTeamsRequest request, RoundFormat format) {
+    private void validateRequest(SaveRoundTeamsRequest request, RoundFormat format, Round round) {
         Set<Integer> teamNumbers = new HashSet<>();
         Set<Long> playerIds = new HashSet<>();
         int expectedTeamSize = format.expectedTeamSize();
@@ -169,9 +204,9 @@ public class RoundTeamService {
 
             if (team.getPlayers().size() != expectedTeamSize) {
                 throw new IllegalArgumentException(
-                        "Format " + format + " requires exactly " + expectedTeamSize +
-                        " players per team. Team " + team.getTeamNumber() +
-                        " has " + team.getPlayers().size()
+                        "Format " + format + " requires exactly " + expectedTeamSize
+                                + " players per team. Team " + team.getTeamNumber()
+                                + " has " + team.getPlayers().size()
                 );
             }
 
@@ -180,6 +215,10 @@ public class RoundTeamService {
             for (RoundTeamPlayerRequest player : team.getPlayers()) {
                 if (player.getPlayerId() == null) {
                     throw new IllegalArgumentException("Each team player must have a playerId");
+                }
+
+                if (player.getScorecardId() == null) {
+                    throw new IllegalArgumentException("Each team player must have a scorecardId");
                 }
 
                 if (!playerIds.add(player.getPlayerId())) {
@@ -192,10 +231,31 @@ public class RoundTeamService {
 
                 if (!playerOrders.add(player.getPlayerOrder())) {
                     throw new IllegalArgumentException(
-                            "Duplicate playerOrder " + player.getPlayerOrder() + " in team " + team.getTeamNumber()
+                            "Duplicate playerOrder " + player.getPlayerOrder()
+                                    + " in team " + team.getTeamNumber()
+                    );
+                }
+
+                if (Boolean.TRUE.equals(player.getUseAlternateTee()) && round.getAlternateRoundTee() == null) {
+                    throw new IllegalArgumentException(
+                            "Player " + player.getPlayerId()
+                                    + " was marked for alternate tee, but this round has no alternate tee configured"
                     );
                 }
             }
         }
+    }
+
+    private boolean isUsingAlternateTee(Scorecard scorecard, Round round) {
+        if (scorecard == null || scorecard.getRoundTee() == null) {
+            return false;
+        }
+
+        RoundTee alternateRoundTee = round.getAlternateRoundTee();
+        if (alternateRoundTee == null || alternateRoundTee.getId() == null) {
+            return false;
+        }
+
+        return alternateRoundTee.getId().equals(scorecard.getRoundTee().getId());
     }
 }

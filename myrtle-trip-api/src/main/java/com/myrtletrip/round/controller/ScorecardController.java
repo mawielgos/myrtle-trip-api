@@ -1,0 +1,35 @@
+package com.myrtletrip.round.controller;
+
+import com.myrtletrip.round.dto.ScorecardDetailResponse;
+import com.myrtletrip.round.dto.UpdateAlternateTeeRequest;
+import com.myrtletrip.round.service.ScorecardHandicapService;
+import com.myrtletrip.round.service.ScorecardQueryService;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/scorecards")
+public class ScorecardController {
+
+    private final ScorecardQueryService scorecardQueryService;
+    private final ScorecardHandicapService scorecardHandicapService;
+
+    public ScorecardController(ScorecardQueryService scorecardQueryService,
+                               ScorecardHandicapService scorecardHandicapService) {
+        this.scorecardQueryService = scorecardQueryService;
+        this.scorecardHandicapService = scorecardHandicapService;
+    }
+
+    @GetMapping("/{scorecardId}")
+    public ResponseEntity<ScorecardDetailResponse> getScorecardDetail(@PathVariable Long scorecardId) {
+        return ResponseEntity.ok(scorecardQueryService.getScorecardDetail(scorecardId));
+    }
+
+    @PutMapping("/{scorecardId}/alternate-tee")
+    public ResponseEntity<Void> setAlternateTee(@PathVariable Long scorecardId,
+                                                @RequestBody UpdateAlternateTeeRequest request) {
+        scorecardHandicapService.setAlternateTee(scorecardId, request.isUseAlternateTee());
+        return ResponseEntity.ok().build();
+    }
+}

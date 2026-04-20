@@ -1,5 +1,7 @@
 package com.myrtletrip.trip.dto;
 
+import java.time.LocalDate;
+
 public class TripListResponse {
 
     private Long tripId;
@@ -8,6 +10,10 @@ public class TripListResponse {
     private Integer tripYear;
     private Long playerCount;
     private Long roundCount;
+    private String status;
+    private LocalDate startDate;
+    private LocalDate endDate;
+    private Boolean canDelete;
 
     public Long getTripId() {
         return tripId;
@@ -55,5 +61,37 @@ public class TripListResponse {
 
     public void setRoundCount(Long roundCount) {
         this.roundCount = roundCount;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    public void setStartDate(LocalDate startDate) {
+        this.startDate = startDate;
+    }
+
+    public LocalDate getEndDate() {
+        return endDate;
+    }
+
+    public void setEndDate(LocalDate endDate) {
+        this.endDate = endDate;
+    }
+
+    public Boolean getCanDelete() {
+        return canDelete;
+    }
+
+    public void setCanDelete(Boolean canDelete) {
+        this.canDelete = canDelete;
     }
 }

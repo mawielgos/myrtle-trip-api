@@ -86,9 +86,13 @@ public class BulkScoreEntryService {
 
         for (int i = 0; i < dto.getHoles().size(); i++) {
             Integer strokes = dto.getHoles().get(i);
-            if (strokes != null && strokes < 1) {
+            if (strokes == null) {
+                continue;
+            }
+
+            if (strokes < 1 || strokes > 20) {
                 throw new IllegalArgumentException(
-                        "Invalid score on hole " + (i + 1) + " for player " + dto.getPlayerId()
+                        "Invalid score on hole " + (i + 1) + " for player " + dto.getPlayerId() + ": " + strokes
                 );
             }
         }

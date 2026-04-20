@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/round-games")
+@CrossOrigin
 public class RoundGameController {
 
     private final RoundGameScoringService roundGameScoringService;
@@ -16,7 +17,12 @@ public class RoundGameController {
     }
 
     @GetMapping("/{roundId}")
-    public ResponseEntity<RoundGameResult> scoreRound(@PathVariable Long roundId) {
-        return ResponseEntity.ok(roundGameScoringService.scoreRound(roundId));
+    public ResponseEntity<RoundGameResult> getRoundGameResult(@PathVariable Long roundId) {
+        return ResponseEntity.ok(roundGameScoringService.getRoundResult(roundId));
+    }
+
+    @PostMapping("/{roundId}/recalculate")
+    public ResponseEntity<RoundGameResult> recalculateRoundGame(@PathVariable Long roundId) {
+        return ResponseEntity.ok(roundGameScoringService.recalculateRound(roundId));
     }
 }

@@ -3,7 +3,7 @@ package com.myrtletrip.scoreentry.entity;
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
-
+import com.myrtletrip.round.entity.RoundTee;
 import jakarta.persistence.*;
 
 @Entity
@@ -25,9 +25,10 @@ public class Scorecard {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id")
     private RoundTeam team;
-    
-    @Column(name = "use_alternate_tee", nullable = false)
-    private Boolean useAlternateTee = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "round_tee_id")
+    private RoundTee roundTee;
 
     @Column(name = "course_handicap")
     private Integer courseHandicap;
@@ -43,6 +44,9 @@ public class Scorecard {
 
     @Column(name = "net_score")
     private Integer netScore;
+
+    @Column(name = "thru_hole")
+    private Integer thruHole;
 
     public Long getId() {
         return id;
@@ -75,13 +79,13 @@ public class Scorecard {
     public void setTeam(RoundTeam team) {
         this.team = team;
     }
-    
-    public Boolean getUseAlternateTee() {
-        return useAlternateTee;
+
+    public RoundTee getRoundTee() {
+        return roundTee;
     }
 
-    public void setUseAlternateTee(Boolean useAlternateTee) {
-        this.useAlternateTee = useAlternateTee;
+    public void setRoundTee(RoundTee roundTee) {
+        this.roundTee = roundTee;
     }
 
     public Integer getCourseHandicap() {
@@ -122,5 +126,13 @@ public class Scorecard {
 
     public void setNetScore(Integer netScore) {
         this.netScore = netScore;
+    }
+
+    public Integer getThruHole() {
+        return thruHole;
+    }
+
+    public void setThruHole(Integer thruHole) {
+        this.thruHole = thruHole;
     }
 }

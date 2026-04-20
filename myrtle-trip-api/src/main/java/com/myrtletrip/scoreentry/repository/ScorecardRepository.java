@@ -7,8 +7,14 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ScorecardRepository extends JpaRepository<Scorecard, Long> {
-    
+
     List<Scorecard> findByRound_Id(Long roundId);
-    
+
+    List<Scorecard> findByRound_IdOrderByIdAsc(Long roundId);
+
     Optional<Scorecard> findByRound_IdAndPlayer_Id(Long roundId, Long playerId);
+    
+    long countByRoundId(Long roundId);
+    
+    long countByRoundIdAndTeamIsNull(Long roundId);
 }

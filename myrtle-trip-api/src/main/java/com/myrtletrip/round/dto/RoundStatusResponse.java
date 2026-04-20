@@ -7,8 +7,11 @@ import java.util.List;
 public class RoundStatusResponse {
 
     private Long roundId;
+    private Long tripId;
     private String courseName;
     private String teeName;
+    private String alternateTeeName;
+    private String format;
     private LocalDate roundDate;
     private Boolean finalized;
     private List<RoundPlayerStatusResponse> players = new ArrayList<>();
@@ -19,6 +22,14 @@ public class RoundStatusResponse {
 
     public void setRoundId(Long roundId) {
         this.roundId = roundId;
+    }
+
+    public Long getTripId() {
+        return tripId;
+    }
+
+    public void setTripId(Long tripId) {
+        this.tripId = tripId;
     }
 
     public String getCourseName() {
@@ -35,6 +46,22 @@ public class RoundStatusResponse {
 
     public void setTeeName(String teeName) {
         this.teeName = teeName;
+    }
+
+    public String getAlternateTeeName() {
+        return alternateTeeName;
+    }
+
+    public void setAlternateTeeName(String alternateTeeName) {
+        this.alternateTeeName = alternateTeeName;
+    }
+
+    public String getFormat() {
+        return format;
+    }
+
+    public void setFormat(String format) {
+        this.format = format;
     }
 
     public LocalDate getRoundDate() {

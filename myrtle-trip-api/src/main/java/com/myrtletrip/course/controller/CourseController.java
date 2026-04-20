@@ -1,13 +1,15 @@
 package com.myrtletrip.course.controller;
 
-import com.myrtletrip.course.entity.CourseHole;
+import com.myrtletrip.course.dto.CourseListResponse;
+import com.myrtletrip.course.dto.CourseTeeListResponse;
 import com.myrtletrip.course.service.CourseService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/course-tees")
+@RequestMapping("/api/courses")
+@CrossOrigin
 public class CourseController {
 
     private final CourseService courseService;
@@ -16,8 +18,13 @@ public class CourseController {
         this.courseService = courseService;
     }
 
-    @GetMapping("/{courseTeeId}/holes")
-    public List<CourseHole> getHolesForTee(@PathVariable Long courseTeeId) {
-        return courseService.getHolesForTee(courseTeeId);
+    @GetMapping
+    public List<CourseListResponse> getCourses() {
+        return courseService.getActiveCourses();
+    }
+
+    @GetMapping("/{courseId}/tees")
+    public List<CourseTeeListResponse> getCourseTees(@PathVariable Long courseId) {
+        return courseService.getActiveTeesForCourse(courseId);
     }
 }

@@ -1,7 +1,8 @@
 package com.myrtletrip.handicap.controller;
 
-import com.myrtletrip.handicap.service.FrozenGhinImportService;
 import org.springframework.web.bind.annotation.*;
+
+import com.myrtletrip.handicap.source.frozen.FrozenGhinImportService;
 
 @RestController
 @RequestMapping("/api/ghin")

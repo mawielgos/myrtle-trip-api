@@ -10,4 +10,6 @@ public interface RoundTeamRepository extends JpaRepository<RoundTeam, Long> {
     List<RoundTeam> findByRound_IdOrderByTeamNumberAsc(Long roundId);
 
     void deleteByRound_Id(Long roundId);
+    
+    long countByRoundId(Long roundId);
 }

@@ -2,6 +2,7 @@ package com.myrtletrip.handicap.service;
 
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.round.entity.Round;
+import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,8 +59,10 @@ public class RoundHandicapService {
         if (round == null) {
             throw new IllegalArgumentException("scorecard.round is required");
         }
-        if (round.getCourseTee() == null) {
-            throw new IllegalArgumentException("round.courseTee is required");
+
+        RoundTee roundTee = scorecard.getRoundTee();
+        if (roundTee == null) {
+            throw new IllegalArgumentException("scorecard.roundTee is required");
         }
 
         BigDecimal tripIndex = calculateTripIndex(scorecard, handicapGroupCode);
@@ -67,16 +70,9 @@ public class RoundHandicapService {
             return null;
         }
 
-        if (Boolean.TRUE.equals(scorecard.getUseAlternateTee())) {
-            return courseHandicapService.calculateAlternateCourseHandicap(
-                    tripIndex,
-                    round.getCourseTee()
-            );
-        }
-
         return courseHandicapService.calculateCourseHandicap(
                 tripIndex,
-                round.getCourseTee()
+                roundTee
         );
     }
 
@@ -86,9 +82,14 @@ public class RoundHandicapService {
             return null;
         }
 
-        // Temporary rule: playing handicap = course handicap.
-        // Later this can apply round-format-specific percentages or other adjustments.
-        return courseHandicap;
+        Round round = scorecard.getRound();
+        if (round == null) {
+            throw new IllegalArgumentException("scorecard.round is required");
+        }
+
+        int handicapPercent = normalizeHandicapPercent(round.getHandicapPercent());
+
+        return (int) Math.round(courseHandicap * (handicapPercent / 100.0));
     }
 
     public void populateCurrentHandicaps(Scorecard scorecard, String handicapGroupCode) {
@@ -96,7 +97,26 @@ public class RoundHandicapService {
             throw new IllegalArgumentException("scorecard is required");
         }
 
-        scorecard.setCourseHandicap(calculateCourseHandicap(scorecard, handicapGroupCode));
+        Integer courseHandicap = calculateCourseHandicap(scorecard, handicapGroupCode);
+        scorecard.setCourseHandicap(courseHandicap);
+
+        if (courseHandicap == null) {
+            scorecard.setPlayingHandicap(null);
+            return;
+        }
+
         scorecard.setPlayingHandicap(calculatePlayingHandicap(scorecard, handicapGroupCode));
+    }
+
+    private int normalizeHandicapPercent(Integer handicapPercent) {
+        if (handicapPercent == null) {
+            return 100;
+        }
+
+        if (handicapPercent < 0 || handicapPercent > 100) {
+            throw new IllegalArgumentException("handicapPercent must be between 0 and 100");
+        }
+
+        return handicapPercent;
     }
 }

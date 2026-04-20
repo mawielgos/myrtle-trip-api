@@ -5,6 +5,7 @@ public class RoundPlayerStatusResponse {
     private Long scorecardId;
     private Long playerId;
     private String playerName;
+    private Boolean useAlternateTee;
     private Integer courseHandicap;
     private Integer playingHandicap;
 
@@ -30,6 +31,14 @@ public class RoundPlayerStatusResponse {
 
     public void setPlayerName(String playerName) {
         this.playerName = playerName;
+    }
+
+    public Boolean getUseAlternateTee() {
+        return useAlternateTee;
+    }
+
+    public void setUseAlternateTee(Boolean useAlternateTee) {
+        this.useAlternateTee = useAlternateTee;
     }
 
     public Integer getCourseHandicap() {

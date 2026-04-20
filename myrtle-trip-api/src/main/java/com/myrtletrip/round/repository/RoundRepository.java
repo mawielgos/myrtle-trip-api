@@ -14,4 +14,13 @@ public interface RoundRepository extends JpaRepository<Round, Long> {
     Optional<Round> findByTrip_IdAndRoundDate(Long tripId, LocalDate roundDate);
 
     long countByTrip_Id(Long tripId);
+
+    List<Round> findByTrip_IdOrderByRoundNumberAsc(Long tripId);
+
+    void deleteByTrip_Id(Long tripId);
+
+    List<Round> findByTripIdOrderById(Long tripId);
+    
+    List<Round> findByTripId(Long tripId);
+
 }

@@ -1,24 +1,19 @@
 package com.myrtletrip.round.dto;
 
-import java.time.LocalDate;
-
 import com.myrtletrip.round.model.RoundFormat;
+
+import java.time.LocalDate;
 
 public class RoundSetupRequest {
 
     private Long tripId;
     private Long courseId;
-    private Long courseTeeId;
+    private Long standardCourseTeeId;
+    private Long alternateCourseTeeId;
     private LocalDate roundDate;
     private RoundFormat format;
-    
-    public RoundFormat getFormat() {
-        return format;
-    }
+    private Integer handicapPercent = 100;
 
-    public void setFormat(RoundFormat format) {
-        this.format = format;
-    }
     public Long getTripId() {
         return tripId;
     }
@@ -35,12 +30,20 @@ public class RoundSetupRequest {
         this.courseId = courseId;
     }
 
-    public Long getCourseTeeId() {
-        return courseTeeId;
+    public Long getStandardCourseTeeId() {
+        return standardCourseTeeId;
     }
 
-    public void setCourseTeeId(Long courseTeeId) {
-        this.courseTeeId = courseTeeId;
+    public void setStandardCourseTeeId(Long standardCourseTeeId) {
+        this.standardCourseTeeId = standardCourseTeeId;
+    }
+
+    public Long getAlternateCourseTeeId() {
+        return alternateCourseTeeId;
+    }
+
+    public void setAlternateCourseTeeId(Long alternateCourseTeeId) {
+        this.alternateCourseTeeId = alternateCourseTeeId;
     }
 
     public LocalDate getRoundDate() {
@@ -49,5 +52,21 @@ public class RoundSetupRequest {
 
     public void setRoundDate(LocalDate roundDate) {
         this.roundDate = roundDate;
+    }
+
+    public RoundFormat getFormat() {
+        return format;
+    }
+
+    public void setFormat(RoundFormat format) {
+        this.format = format;
+    }
+
+    public Integer getHandicapPercent() {
+        return handicapPercent;
+    }
+
+    public void setHandicapPercent(Integer handicapPercent) {
+        this.handicapPercent = handicapPercent;
     }
 }

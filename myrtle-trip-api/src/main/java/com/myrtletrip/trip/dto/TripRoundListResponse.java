@@ -11,6 +11,9 @@ public class TripRoundListResponse {
     private String teeName;
     private String gameFormat;
     private Boolean finalized;
+    private boolean needsGrouping;
+    private boolean needsTeams;
+    private boolean readyForScoring;
 
     public Long getRoundId() {
         return roundId;
@@ -66,5 +69,29 @@ public class TripRoundListResponse {
 
     public void setFinalized(Boolean finalized) {
         this.finalized = finalized;
+    }
+
+    public boolean isNeedsGrouping() {
+        return needsGrouping;
+    }
+
+    public void setNeedsGrouping(boolean needsGrouping) {
+        this.needsGrouping = needsGrouping;
+    }
+
+    public boolean isNeedsTeams() {
+        return needsTeams;
+    }
+
+    public void setNeedsTeams(boolean needsTeams) {
+        this.needsTeams = needsTeams;
+    }
+
+    public boolean isReadyForScoring() {
+        return readyForScoring;
+    }
+
+    public void setReadyForScoring(boolean readyForScoring) {
+        this.readyForScoring = readyForScoring;
     }
 }

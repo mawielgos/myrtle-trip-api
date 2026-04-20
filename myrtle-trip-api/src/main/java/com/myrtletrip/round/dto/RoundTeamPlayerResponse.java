@@ -6,6 +6,7 @@ public class RoundTeamPlayerResponse {
     private Long playerId;
     private String playerName;
     private Integer playerOrder;
+    private Boolean useAlternateTee;
 
     public Long getScorecardId() {
         return scorecardId;
@@ -37,5 +38,13 @@ public class RoundTeamPlayerResponse {
 
     public void setPlayerOrder(Integer playerOrder) {
         this.playerOrder = playerOrder;
+    }
+
+    public Boolean getUseAlternateTee() {
+        return useAlternateTee;
+    }
+
+    public void setUseAlternateTee(Boolean useAlternateTee) {
+        this.useAlternateTee = useAlternateTee;
     }
 }

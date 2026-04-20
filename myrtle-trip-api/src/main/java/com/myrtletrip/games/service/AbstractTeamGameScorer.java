@@ -12,6 +12,7 @@ import com.myrtletrip.games.model.TeamScoringData;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 public abstract class AbstractTeamGameScorer implements RoundGameScorer {
@@ -40,10 +41,107 @@ public abstract class AbstractTeamGameScorer implements RoundGameScorer {
                         .thenComparing(TeamGameResult::getTeamName, Comparator.nullsLast(String::compareToIgnoreCase))
         );
 
-        int place = 1;
-        for (TeamGameResult team : sorted) {
-            team.setPlacement(place++);
+        Integer previousPoints = null;
+        Integer previousNet = null;
+        Integer previousPlacement = null;
+
+        for (int i = 0; i < sorted.size(); i++) {
+            TeamGameResult team = sorted.get(i);
+            int currentPlacement = i + 1;
+
+            if (previousPoints != null
+                    && previousNet != null
+                    && Objects.equals(previousPoints, team.getTotalPoints())
+                    && Objects.equals(previousNet, team.getTotalNet())) {
+                team.setPlacement(previousPlacement);
+            } else {
+                team.setPlacement(currentPlacement);
+                previousPlacement = currentPlacement;
+                previousPoints = team.getTotalPoints();
+                previousNet = team.getTotalNet();
+            }
         }
+    }
+
+    protected void assignPlacementsByLowNet(RoundGameResult result) {
+        List<TeamGameResult> sorted = new ArrayList<>(result.getTeams());
+        sorted.sort(
+                Comparator.comparing(TeamGameResult::getTotalNet, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TeamGameResult::getTeamName, Comparator.nullsLast(String::compareToIgnoreCase))
+        );
+
+        Integer previousNet = null;
+        Integer previousPlacement = null;
+
+        for (int i = 0; i < sorted.size(); i++) {
+            TeamGameResult team = sorted.get(i);
+            int currentPlacement = i + 1;
+
+            if (previousNet != null && Objects.equals(previousNet, team.getTotalNet())) {
+                team.setPlacement(previousPlacement);
+            } else {
+                team.setPlacement(currentPlacement);
+                previousPlacement = currentPlacement;
+                previousNet = team.getTotalNet();
+            }
+        }
+    }
+
+    protected void assignPlacementsByLowGross(RoundGameResult result) {
+        List<TeamGameResult> sorted = new ArrayList<>(result.getTeams());
+        sorted.sort(
+                Comparator.comparing(TeamGameResult::getTotalGross, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TeamGameResult::getTeamName, Comparator.nullsLast(String::compareToIgnoreCase))
+        );
+
+        Integer previousGross = null;
+        Integer previousPlacement = null;
+
+        for (int i = 0; i < sorted.size(); i++) {
+            TeamGameResult team = sorted.get(i);
+            int currentPlacement = i + 1;
+
+            if (previousGross != null && Objects.equals(previousGross, team.getTotalGross())) {
+                team.setPlacement(previousPlacement);
+            } else {
+                team.setPlacement(currentPlacement);
+                previousPlacement = currentPlacement;
+                previousGross = team.getTotalGross();
+            }
+        }
+    }
+
+    protected void assignMatchPointsTwoTeam(RoundGameResult result) {
+        if (result.getTeams().size() != 2) {
+            return;
+        }
+
+        TeamGameResult a = result.getTeams().get(0);
+        TeamGameResult b = result.getTeams().get(1);
+
+        int aPoints = 0;
+        int bPoints = 0;
+
+        for (int i = 0; i < a.getHoleResults().size(); i++) {
+            HoleGameResult ah = a.getHoleResults().get(i);
+            HoleGameResult bh = b.getHoleResults().get(i);
+
+            if (ah.getNetScore() < bh.getNetScore()) {
+                ah.setPoints(1);
+                bh.setPoints(0);
+                aPoints++;
+            } else if (bh.getNetScore() < ah.getNetScore()) {
+                ah.setPoints(0);
+                bh.setPoints(1);
+                bPoints++;
+            } else {
+                ah.setPoints(0);
+                bh.setPoints(0);
+            }
+        }
+
+        a.setTotalPoints(aPoints);
+        b.setTotalPoints(bPoints);
     }
 
     protected PlayerHoleScoringData requirePlayerHole(PlayerScoringData player, int holeNumber) {
@@ -104,5 +202,25 @@ public abstract class AbstractTeamGameScorer implements RoundGameScorer {
             throw new IllegalStateException("Not enough scores to sum lowest " + count);
         }
         return values.stream().limit(count).mapToInt(Integer::intValue).sum();
+    }
+
+    protected void requireExactPlayerCount(TeamScoringData team, int expected, String gameName) {
+        if (team.getPlayers().size() != expected) {
+            throw new IllegalStateException(
+                    gameName + " requires exactly " + expected + " players per team. "
+                            + "teamId=" + team.getTeamId()
+                            + ", actual=" + team.getPlayers().size()
+            );
+        }
+    }
+
+    protected void requireMinimumPlayerCount(TeamScoringData team, int minimum, String gameName) {
+        if (team.getPlayers().size() < minimum) {
+            throw new IllegalStateException(
+                    gameName + " requires at least " + minimum + " players per team. "
+                            + "teamId=" + team.getTeamId()
+                            + ", actual=" + team.getPlayers().size()
+            );
+        }
     }
 }

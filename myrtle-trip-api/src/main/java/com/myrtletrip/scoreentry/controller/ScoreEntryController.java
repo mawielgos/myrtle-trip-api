@@ -1,8 +1,6 @@
 package com.myrtletrip.scoreentry.controller;
 
 import com.myrtletrip.scoreentry.dto.RoundScorecardResponse;
-import com.myrtletrip.scoreentry.dto.ScorecardResponse;
-import com.myrtletrip.scoreentry.service.ScorecardHandicapService;
 import com.myrtletrip.scoreentry.service.ScoringService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -17,17 +15,9 @@ import java.util.List;
 public class ScoreEntryController {
 
     private final ScoringService scoringService;
-    private final ScorecardHandicapService scorecardHandicapService;
 
-    public ScoreEntryController(ScoringService scoringService,
-                                ScorecardHandicapService scorecardHandicapService) {
+    public ScoreEntryController(ScoringService scoringService) {
         this.scoringService = scoringService;
-        this.scorecardHandicapService = scorecardHandicapService;
-    }
-
-    @GetMapping("/{scorecardId}")
-    public ResponseEntity<ScorecardResponse> getScorecard(@PathVariable Long scorecardId) {
-        return ResponseEntity.ok(scoringService.getScorecard(scorecardId));
     }
 
     @PutMapping("/{scorecardId}/holes/{holeNumber}")
@@ -43,15 +33,6 @@ public class ScoreEntryController {
     @PostMapping("/{scorecardId}/recalculate")
     public ResponseEntity<Void> recalculateScorecard(@PathVariable Long scorecardId) {
         scoringService.recalculate(scorecardId);
-        return ResponseEntity.ok().build();
-    }
-
-    @PutMapping("/{scorecardId}/alternate-tee")
-    public ResponseEntity<Void> setAlternateTee(
-            @PathVariable Long scorecardId,
-            @RequestBody AlternateTeeRequest request) {
-
-        scorecardHandicapService.setAlternateTee(scorecardId, request.useAlternateTee());
         return ResponseEntity.ok().build();
     }
 

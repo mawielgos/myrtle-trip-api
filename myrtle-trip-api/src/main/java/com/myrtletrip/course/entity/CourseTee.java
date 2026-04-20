@@ -10,10 +10,10 @@ import java.math.BigDecimal;
 )
 public class CourseTee {
 
-	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private Long id;
-	
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "course_id", nullable = false)
     private Course course;
@@ -24,19 +24,13 @@ public class CourseTee {
     @Column(name = "course_rating", nullable = false, precision = 5, scale = 2)
     private BigDecimal courseRating;
 
-    @Column(nullable = false)
+    @Column(name = "slope", nullable = false)
     private Integer slope;
-
-    @Column(name = "alternate_course_rating", precision = 5, scale = 2)
-    private BigDecimal alternateCourseRating;
-
-    @Column(name = "alternate_slope")
-    private Integer alternateSlope;
 
     @Column(name = "par_total", nullable = false)
     private Integer parTotal;
 
-    @Column(nullable = false)
+    @Column(name = "active", nullable = false)
     private boolean active = true;
 
     public Long getId() {
@@ -77,22 +71,6 @@ public class CourseTee {
 
     public void setSlope(Integer slope) {
         this.slope = slope;
-    }
-
-    public BigDecimal getAlternateCourseRating() {
-        return alternateCourseRating;
-    }
-
-    public void setAlternateCourseRating(BigDecimal alternateCourseRating) {
-        this.alternateCourseRating = alternateCourseRating;
-    }
-
-    public Integer getAlternateSlope() {
-        return alternateSlope;
-    }
-
-    public void setAlternateSlope(Integer alternateSlope) {
-        this.alternateSlope = alternateSlope;
     }
 
     public Integer getParTotal() {

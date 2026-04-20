@@ -31,13 +31,13 @@ public class ScoreHistoryEntry {
     @Column(name = "score_date", nullable = false)
     private LocalDate scoreDate;
 
-    @Column(name = "course_name", length = 150)
+    @Column(name = "course_name", nullable = false, length = 150)
     private String courseName;
 
-    @Column(name = "course_rating", precision = 5, scale = 2)
+    @Column(name = "course_rating", nullable = false, precision = 5, scale = 2)
     private BigDecimal courseRating;
 
-    @Column(name = "slope")
+    @Column(name = "slope", nullable = false)
     private Integer slope;
 
     @Column(name = "gross_score")
@@ -46,17 +46,17 @@ public class ScoreHistoryEntry {
     @Column(name = "adjusted_gross_score")
     private Integer adjustedGrossScore;
 
-    @Column(name = "used_alternate_tee", nullable = false)
-    private Boolean usedAlternateTee = false;
-    
-    @Column(name = "differential", precision = 5, scale = 1)
+    @Column(name = "differential", precision = 6, scale = 3)
     private BigDecimal differential;
 
-    @Column(name = "source_type", length = 50)
+    @Column(name = "source_type", length = 40)
     private String sourceType;
 
     @Column(name = "included_in_myrtle_calc")
-    private Boolean includedInMyrtleCalc;
+    private Boolean includedInMyrtleCalc = true;
+
+    @Column(name = "used_alternate_tee", nullable = false)
+    private Boolean usedAlternateTee = false;
 
     @Column(name = "handicap_group_code", length = 50)
     private String handicapGroupCode;
@@ -64,13 +64,13 @@ public class ScoreHistoryEntry {
     @Column(name = "posting_order")
     private Integer postingOrder;
 
-    @Column(name = "score_type", length = 20)
+    @Column(name = "score_type", length = 10)
     private String scoreType;
 
     @Column(name = "holes_played")
     private Integer holesPlayed;
 
-    @Column(name = "manual_differential_required")
+    @Column(name = "manual_differential_required", nullable = false)
     private Boolean manualDifferentialRequired = false;
 
     public Long getId() {
@@ -157,14 +157,6 @@ public class ScoreHistoryEntry {
         this.differential = differential;
     }
 
-    public Boolean getUsedAlternateTee() {
-        return usedAlternateTee;
-    }
-
-    public void setUsedAlternateTee(Boolean usedAlternateTee) {
-        this.usedAlternateTee = usedAlternateTee;
-    }
-    
     public String getSourceType() {
         return sourceType;
     }
@@ -179,6 +171,14 @@ public class ScoreHistoryEntry {
 
     public void setIncludedInMyrtleCalc(Boolean includedInMyrtleCalc) {
         this.includedInMyrtleCalc = includedInMyrtleCalc;
+    }
+
+    public Boolean getUsedAlternateTee() {
+        return usedAlternateTee;
+    }
+
+    public void setUsedAlternateTee(Boolean usedAlternateTee) {
+        this.usedAlternateTee = usedAlternateTee;
     }
 
     public String getHandicapGroupCode() {

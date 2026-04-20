@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface ScoreHistoryEntryRepository extends JpaRepository<ScoreHistoryEntry, Long> {
 
@@ -43,10 +44,33 @@ public interface ScoreHistoryEntryRepository extends JpaRepository<ScoreHistoryE
             Collection<String> sourceTypes
     );
 
+    List<ScoreHistoryEntry> findByPlayerAndSourceTypeIn(
+            Player player,
+            Collection<String> sourceTypes
+    );
+
     List<ScoreHistoryEntry> findTop6ByPlayerAndDifferentialIsNotNullAndManualDifferentialRequiredFalseAndSourceTypeNotInOrderByScoreDateDescIdDesc(
             Player player,
             Collection<String> sourceTypes
     );
-    
+
     boolean existsByRound_IdAndPlayer_Id(Long roundId, Long playerId);
+
+    long countByHandicapGroupCode(String handicapGroupCode);
+
+    long countByHandicapGroupCodeAndSourceTypeAndManualDifferentialRequiredTrue(
+            String handicapGroupCode,
+            String sourceType
+    );
+
+    List<ScoreHistoryEntry> findByHandicapGroupCodeAndSourceTypeAndManualDifferentialRequiredTrueOrderByPlayer_DisplayNameAscPostingOrderAscIdAsc(
+            String handicapGroupCode,
+            String sourceType
+    );
+
+    Optional<ScoreHistoryEntry> findByIdAndHandicapGroupCodeAndSourceType(
+            Long id,
+            String handicapGroupCode,
+            String sourceType
+    );
 }
