@@ -9,10 +9,10 @@ import jakarta.persistence.*;
 )
 public class CourseHole {
 
-	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private Long id;
-	
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "course_tee_id", nullable = false)
     private CourseTee courseTee;
@@ -20,60 +20,42 @@ public class CourseHole {
     @Column(name = "hole_number", nullable = false)
     private Integer holeNumber;
 
-    @Column(nullable = false)
+    @Column
     private Integer par;
 
-    @Column(nullable = false)
+    @Column
     private Integer handicap;
 
     @Column
     private Integer yardage;
 
-    public Long getId() {
-        return id;
-    }
+    @Column(name = "women_par")
+    private Integer womenPar;
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    @Column(name = "women_handicap")
+    private Integer womenHandicap;
 
-    public CourseTee getCourseTee() {
-        return courseTee;
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
-    public void setCourseTee(CourseTee courseTee) {
-        this.courseTee = courseTee;
-    }
+    public CourseTee getCourseTee() { return courseTee; }
+    public void setCourseTee(CourseTee courseTee) { this.courseTee = courseTee; }
 
-    public Integer getHoleNumber() {
-        return holeNumber;
-    }
+    public Integer getHoleNumber() { return holeNumber; }
+    public void setHoleNumber(Integer holeNumber) { this.holeNumber = holeNumber; }
 
-    public void setHoleNumber(Integer holeNumber) {
-        this.holeNumber = holeNumber;
-    }
+    public Integer getPar() { return par; }
+    public void setPar(Integer par) { this.par = par; }
 
-    public Integer getPar() {
-        return par;
-    }
+    public Integer getHandicap() { return handicap; }
+    public void setHandicap(Integer handicap) { this.handicap = handicap; }
 
-    public void setPar(Integer par) {
-        this.par = par;
-    }
+    public Integer getYardage() { return yardage; }
+    public void setYardage(Integer yardage) { this.yardage = yardage; }
 
-    public Integer getHandicap() {
-        return handicap;
-    }
+    public Integer getWomenPar() { return womenPar; }
+    public void setWomenPar(Integer womenPar) { this.womenPar = womenPar; }
 
-    public void setHandicap(Integer handicap) {
-        this.handicap = handicap;
-    }
-
-    public Integer getYardage() {
-        return yardage;
-    }
-
-    public void setYardage(Integer yardage) {
-        this.yardage = yardage;
-    }
+    public Integer getWomenHandicap() { return womenHandicap; }
+    public void setWomenHandicap(Integer womenHandicap) { this.womenHandicap = womenHandicap; }
 }

@@ -5,6 +5,7 @@ import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.entity.RoundTeeHole;
 import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundTeeHoleRepository;
+import com.myrtletrip.round.service.RoundTeeResolver;
 import com.myrtletrip.scoreentry.dto.HoleScoreResponse;
 import com.myrtletrip.scoreentry.dto.RoundScorecardResponse;
 import com.myrtletrip.scoreentry.dto.ScorecardResponse;
@@ -27,15 +28,18 @@ public class ScoringService {
     private final ScorecardRepository scorecardRepo;
     private final RoundTeeHoleRepository roundTeeHoleRepository;
     private final RoundScoreHistorySyncService roundScoreHistorySyncService;
+    private final RoundTeeResolver roundTeeResolver;
 
     public ScoringService(HoleScoreRepository holeRepo,
                           ScorecardRepository scorecardRepo,
                           RoundTeeHoleRepository roundTeeHoleRepository,
-                          RoundScoreHistorySyncService roundScoreHistorySyncService) {
+                          RoundScoreHistorySyncService roundScoreHistorySyncService,
+                          RoundTeeResolver roundTeeResolver) {
         this.holeRepo = holeRepo;
         this.scorecardRepo = scorecardRepo;
         this.roundTeeHoleRepository = roundTeeHoleRepository;
         this.roundScoreHistorySyncService = roundScoreHistorySyncService;
+        this.roundTeeResolver = roundTeeResolver;
     }
 
     @Transactional
@@ -50,7 +54,6 @@ public class ScoringService {
 
         Scorecard scorecard = scorecardRepo.findById(scorecardId)
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
-
 
         HoleScore hole = holeRepo.findByScorecard_IdAndHoleNumber(scorecardId, holeNumber)
                 .orElseGet(() -> {
@@ -68,9 +71,9 @@ public class ScoringService {
 
     @Transactional
     public void recalculate(Long scorecardId) {
-        Scorecard scorecard = scorecardRepo.findById(scorecardId)
-                .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
-
+        if (!scorecardRepo.existsById(scorecardId)) {
+            throw new IllegalArgumentException("Scorecard not found");
+        }
 
         recalculateScorecard(scorecardId);
     }
@@ -109,23 +112,23 @@ public class ScoringService {
         List<Scorecard> scorecards = scorecardRepo.findByRound_Id(roundId);
 
         return scorecards.stream().map(sc -> {
-            RoundScorecardResponse dto = new RoundScorecardResponse();
+                    RoundScorecardResponse dto = new RoundScorecardResponse();
 
-            dto.setScorecardId(sc.getId());
-            dto.setPlayerId(sc.getPlayer().getId());
-            dto.setPlayerName(sc.getPlayer().getDisplayName());
-            dto.setPlayingHandicap(sc.getPlayingHandicap());
-            dto.setGrossScore(sc.getGrossScore());
-            dto.setNetScore(sc.getNetScore());
-            dto.setAdjustedGrossScore(sc.getAdjustedGrossScore());
+                    dto.setScorecardId(sc.getId());
+                    dto.setPlayerId(sc.getPlayer().getId());
+                    dto.setPlayerName(sc.getPlayer().getDisplayName());
+                    dto.setPlayingHandicap(sc.getPlayingHandicap());
+                    dto.setGrossScore(sc.getGrossScore());
+                    dto.setNetScore(sc.getNetScore());
+                    dto.setAdjustedGrossScore(sc.getAdjustedGrossScore());
 
-            return dto;
-        })
-        .sorted((a, b) -> Integer.compare(
-                a.getNetScore() == null ? 999 : a.getNetScore(),
-                b.getNetScore() == null ? 999 : b.getNetScore()
-        ))
-        .toList();
+                    return dto;
+                })
+                .sorted((a, b) -> Integer.compare(
+                        a.getNetScore() == null ? 999 : a.getNetScore(),
+                        b.getNetScore() == null ? 999 : b.getNetScore()
+                ))
+                .toList();
     }
 
     private void recalculateScorecard(Long scorecardId) {
@@ -133,10 +136,10 @@ public class ScoringService {
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
 
         Round round = scorecard.getRound();
-        RoundTee roundTee = scorecard.getRoundTee();
-
-        if (roundTee == null) {
-            throw new IllegalStateException("scorecard.roundTee is required");
+        RoundTee roundTee = roundTeeResolver.resolve(scorecard);
+        if (scorecard.getRoundTee() == null) {
+            scorecard.setRoundTee(roundTee);
+            scorecardRepo.save(scorecard);
         }
 
         List<RoundTeeHole> roundTeeHoles = roundTeeHoleRepository.findByRoundTee_IdOrderByHoleNumberAsc(roundTee.getId());

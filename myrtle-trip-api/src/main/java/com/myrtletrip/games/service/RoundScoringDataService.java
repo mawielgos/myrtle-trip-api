@@ -63,6 +63,7 @@ public class RoundScoringDataService {
             TeamScoringData teamData = new TeamScoringData();
             teamData.setTeamId(roundTeam.getId());
             teamData.setTeamName(resolveTeamName(roundTeam));
+            teamData.setScrambleTotalScore(roundTeam.getScrambleTotalScore());
 
             List<RoundTeamPlayer> teamPlayers =
                     roundTeamPlayerRepository.findByRoundTeam_IdOrderByPlayerOrderAsc(roundTeam.getId());

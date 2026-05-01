@@ -14,6 +14,7 @@ import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundGroupRepository;
 import com.myrtletrip.round.repository.RoundRepository;
+import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import jakarta.transaction.Transactional;
@@ -37,6 +38,8 @@ public class RoundGroupService {
     private final PlayerRepository playerRepository;
     private final ScorecardRepository scorecardRepository;
     private final ScorecardHandicapService scorecardHandicapService;
+    private final RoundTeeRepository roundTeeRepository;
+    private final RoundTeeProvisioningService roundTeeProvisioningService;
     private final RoundTeamAutoAssignmentService roundTeamAutoAssignmentService;
     private final RoundGroupAutoAssignmentService roundGroupAutoAssignmentService;
 
@@ -46,6 +49,8 @@ public class RoundGroupService {
             PlayerRepository playerRepository,
             ScorecardRepository scorecardRepository,
             ScorecardHandicapService scorecardHandicapService,
+            RoundTeeRepository roundTeeRepository,
+            RoundTeeProvisioningService roundTeeProvisioningService,
             RoundTeamAutoAssignmentService roundTeamAutoAssignmentService,
             RoundGroupAutoAssignmentService roundGroupAutoAssignmentService
     ) {
@@ -54,6 +59,8 @@ public class RoundGroupService {
         this.playerRepository = playerRepository;
         this.scorecardRepository = scorecardRepository;
         this.scorecardHandicapService = scorecardHandicapService;
+        this.roundTeeRepository = roundTeeRepository;
+        this.roundTeeProvisioningService = roundTeeProvisioningService;
         this.roundTeamAutoAssignmentService = roundTeamAutoAssignmentService;
         this.roundGroupAutoAssignmentService = roundGroupAutoAssignmentService;
     }
@@ -61,6 +68,7 @@ public class RoundGroupService {
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
     public RoundGroupPageResponse getRoundGroups(Long roundId) {
         Round round = getRoundOrThrow(roundId);
+        roundTeeProvisioningService.ensureRoundTeeOptions(round);
 
         List<RoundGroup> groups;
 
@@ -88,6 +96,7 @@ public class RoundGroupService {
 
     public RoundGroupPageResponse saveRoundGroups(Long roundId, RoundGroupAssignmentRequest request) {
         Round round = getRoundOrThrow(roundId);
+        roundTeeProvisioningService.ensureRoundTeeOptions(round);
         validateRequest(request, round);
 
         if (Boolean.TRUE.equals(round.getFinalized())) {
@@ -139,7 +148,7 @@ public class RoundGroupService {
         applyTeeSelections(round, request, scorecardsById);
 
         if (round.getFormat() != null && round.getFormat() != RoundFormat.TWO_MAN_LOW_NET) {
-            roundTeamAutoAssignmentService.syncTeamsFromGroupsIfNeeded(roundId);
+            roundTeamAutoAssignmentService.rebuildTeamsFromGroups(roundId);
         }
 
         return getRoundGroups(roundId);
@@ -167,22 +176,37 @@ public class RoundGroupService {
             Scorecard scorecard,
             RoundGroupAssignmentItemRequest item
     ) {
-        boolean useAlternateTee = Boolean.TRUE.equals(item.getUseAlternateTee());
-
         RoundTee selectedRoundTee;
-        if (useAlternateTee) {
-            selectedRoundTee = round.getAlternateRoundTee();
-            if (selectedRoundTee == null) {
+
+        if (item.getRoundTeeId() != null) {
+            selectedRoundTee = roundTeeRepository.findById(item.getRoundTeeId())
+                    .orElseThrow(() -> new IllegalArgumentException("Round tee not found: " + item.getRoundTeeId()));
+
+            if (selectedRoundTee.getRound() == null || !selectedRoundTee.getRound().getId().equals(round.getId())) {
                 throw new IllegalArgumentException(
-                        "Round " + round.getId() + " does not have an alternate tee configured."
+                        "Round tee " + item.getRoundTeeId() + " does not belong to round " + round.getId() + "."
                 );
             }
         } else {
-            selectedRoundTee = round.getStandardRoundTee();
-            if (selectedRoundTee == null) {
-                throw new IllegalArgumentException(
-                        "Round " + round.getId() + " does not have a standard tee configured."
-                );
+            boolean useAlternateTee = Boolean.TRUE.equals(item.getUseAlternateTee());
+
+            if (useAlternateTee) {
+                selectedRoundTee = round.getAlternateRoundTee();
+                if (selectedRoundTee == null) {
+                    throw new IllegalArgumentException(
+                            "Round " + round.getId() + " does not have an alternate tee configured."
+                    );
+                }
+            } else {
+                selectedRoundTee = round.getDefaultRoundTee();
+                if (selectedRoundTee == null) {
+                    selectedRoundTee = round.getStandardRoundTee();
+                }
+                if (selectedRoundTee == null) {
+                    throw new IllegalArgumentException(
+                            "Round " + round.getId() + " does not have a default tee configured."
+                    );
+                }
             }
         }
 
@@ -309,11 +333,6 @@ public class RoundGroupService {
                 }
             }
 
-            if (Boolean.TRUE.equals(item.getUseAlternateTee()) && round.getAlternateRoundTee() == null) {
-                throw new IllegalArgumentException(
-                        "Player " + item.getPlayerId() + " cannot use alternate tee because the round has no alternate tee configured."
-                );
-            }
         }
     }
 

@@ -27,4 +27,4 @@ public class CourseController {
     public List<CourseTeeListResponse> getCourseTees(@PathVariable Long courseId) {
         return courseService.getActiveTeesForCourse(courseId);
     }
-}
+    }

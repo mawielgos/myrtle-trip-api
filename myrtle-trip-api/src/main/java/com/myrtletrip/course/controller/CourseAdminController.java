@@ -3,9 +3,11 @@ package com.myrtletrip.course.controller;
 import com.myrtletrip.course.dto.CourseDetailResponse;
 import com.myrtletrip.course.dto.CourseHoleResponse;
 import com.myrtletrip.course.dto.CourseSummaryResponse;
+import com.myrtletrip.course.dto.CourseTeeComboHoleResponse;
 import com.myrtletrip.course.dto.CourseTeeResponse;
 import com.myrtletrip.course.dto.SaveCourseHoleRequest;
 import com.myrtletrip.course.dto.SaveCourseRequest;
+import com.myrtletrip.course.dto.SaveCourseTeeComboHoleRequest;
 import com.myrtletrip.course.dto.SaveCourseTeeRequest;
 import com.myrtletrip.course.service.CourseService;
 import org.springframework.web.bind.annotation.*;
@@ -22,10 +24,6 @@ public class CourseAdminController {
     public CourseAdminController(CourseService courseService) {
         this.courseService = courseService;
     }
-
-    // =========================
-    // COURSE
-    // =========================
 
     @GetMapping
     public List<CourseSummaryResponse> getAllCourses() {
@@ -53,10 +51,6 @@ public class CourseAdminController {
                                                @RequestParam boolean active) {
         return courseService.setCourseActive(courseId, active);
     }
-
-    // =========================
-    // TEES
-    // =========================
 
     @GetMapping("/{courseId}/tees")
     public List<CourseTeeResponse> getTees(@PathVariable Long courseId) {
@@ -86,10 +80,6 @@ public class CourseAdminController {
         return courseService.setTeeActive(teeId, active);
     }
 
-    // =========================
-    // HOLES (THIS IS THE NEW PART)
-    // =========================
-
     @GetMapping("/tees/{teeId}/holes")
     public List<CourseHoleResponse> getHoles(@PathVariable Long teeId) {
         return courseService.getHolesForTeeResponse(teeId);
@@ -99,5 +89,16 @@ public class CourseAdminController {
     public List<CourseHoleResponse> saveHoles(@PathVariable Long teeId,
                                              @RequestBody List<SaveCourseHoleRequest> request) {
         return courseService.saveHolesForTee(teeId, request);
+    }
+
+    @GetMapping("/tees/{teeId}/combo-holes")
+    public List<CourseTeeComboHoleResponse> getComboHoles(@PathVariable Long teeId) {
+        return courseService.getComboHolesForTee(teeId);
+    }
+
+    @PutMapping("/tees/{teeId}/combo-holes")
+    public List<CourseTeeComboHoleResponse> saveComboHoles(@PathVariable Long teeId,
+                                                           @RequestBody List<SaveCourseTeeComboHoleRequest> request) {
+        return courseService.saveComboHolesForTee(teeId, request);
     }
 }

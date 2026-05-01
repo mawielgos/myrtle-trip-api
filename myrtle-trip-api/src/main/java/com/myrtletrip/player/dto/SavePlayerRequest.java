@@ -12,6 +12,7 @@ public class SavePlayerRequest {
     private String venmoId;
     private String zelleId;
     private String handicapMethod;
+    private String gender;
 
     public SavePlayerRequest() {
     }
@@ -95,4 +96,13 @@ public class SavePlayerRequest {
     public void setHandicapMethod(String handicapMethod) {
         this.handicapMethod = handicapMethod;
     }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
 }
+

@@ -8,65 +8,42 @@ public class RoundSetupRequest {
 
     private Long tripId;
     private Long courseId;
-    private Long standardCourseTeeId;
-    private Long alternateCourseTeeId;
+    private Long defaultCourseTeeId;
     private LocalDate roundDate;
     private RoundFormat format;
     private Integer handicapPercent = 100;
 
-    public Long getTripId() {
-        return tripId;
-    }
+    public Long getTripId() { return tripId; }
+    public void setTripId(Long tripId) { this.tripId = tripId; }
 
-    public void setTripId(Long tripId) {
-        this.tripId = tripId;
-    }
+    public Long getCourseId() { return courseId; }
+    public void setCourseId(Long courseId) { this.courseId = courseId; }
 
-    public Long getCourseId() {
-        return courseId;
-    }
+    public Long getDefaultCourseTeeId() { return defaultCourseTeeId; }
+    public void setDefaultCourseTeeId(Long defaultCourseTeeId) { this.defaultCourseTeeId = defaultCourseTeeId; }
 
-    public void setCourseId(Long courseId) {
-        this.courseId = courseId;
-    }
+    /** Backward-compatible JSON/property alias for older UI payloads. */
+    @Deprecated
+    public Long getStandardCourseTeeId() { return defaultCourseTeeId; }
 
-    public Long getStandardCourseTeeId() {
-        return standardCourseTeeId;
-    }
+    /** Backward-compatible JSON/property alias for older UI payloads. */
+    @Deprecated
+    public void setStandardCourseTeeId(Long standardCourseTeeId) { this.defaultCourseTeeId = standardCourseTeeId; }
 
-    public void setStandardCourseTeeId(Long standardCourseTeeId) {
-        this.standardCourseTeeId = standardCourseTeeId;
-    }
+    /** Alternate tee is no longer configured at round setup. */
+    @Deprecated
+    public Long getAlternateCourseTeeId() { return null; }
 
-    public Long getAlternateCourseTeeId() {
-        return alternateCourseTeeId;
-    }
+    /** Alternate tee is no longer configured at round setup. */
+    @Deprecated
+    public void setAlternateCourseTeeId(Long alternateCourseTeeId) { }
 
-    public void setAlternateCourseTeeId(Long alternateCourseTeeId) {
-        this.alternateCourseTeeId = alternateCourseTeeId;
-    }
+    public LocalDate getRoundDate() { return roundDate; }
+    public void setRoundDate(LocalDate roundDate) { this.roundDate = roundDate; }
 
-    public LocalDate getRoundDate() {
-        return roundDate;
-    }
+    public RoundFormat getFormat() { return format; }
+    public void setFormat(RoundFormat format) { this.format = format; }
 
-    public void setRoundDate(LocalDate roundDate) {
-        this.roundDate = roundDate;
-    }
-
-    public RoundFormat getFormat() {
-        return format;
-    }
-
-    public void setFormat(RoundFormat format) {
-        this.format = format;
-    }
-
-    public Integer getHandicapPercent() {
-        return handicapPercent;
-    }
-
-    public void setHandicapPercent(Integer handicapPercent) {
-        this.handicapPercent = handicapPercent;
-    }
+    public Integer getHandicapPercent() { return handicapPercent; }
+    public void setHandicapPercent(Integer handicapPercent) { this.handicapPercent = handicapPercent; }
 }

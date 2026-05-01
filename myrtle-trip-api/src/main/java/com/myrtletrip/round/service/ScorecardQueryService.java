@@ -23,13 +23,16 @@ public class ScorecardQueryService {
     private final ScorecardRepository scorecardRepository;
     private final HoleScoreRepository holeScoreRepository;
     private final RoundTeeHoleRepository roundTeeHoleRepository;
+    private final RoundTeeResolver roundTeeResolver;
 
     public ScorecardQueryService(ScorecardRepository scorecardRepository,
                                  HoleScoreRepository holeScoreRepository,
-                                 RoundTeeHoleRepository roundTeeHoleRepository) {
+                                 RoundTeeHoleRepository roundTeeHoleRepository,
+                                 RoundTeeResolver roundTeeResolver) {
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
         this.roundTeeHoleRepository = roundTeeHoleRepository;
+        this.roundTeeResolver = roundTeeResolver;
     }
 
     @Transactional(readOnly = true)
@@ -37,6 +40,7 @@ public class ScorecardQueryService {
         Scorecard scorecard = scorecardRepository.findById(scorecardId)
                 .orElseThrow(() -> new EntityNotFoundException("Scorecard not found: " + scorecardId));
 
+        RoundTee effectiveRoundTee = roundTeeResolver.resolve(scorecard);
         List<HoleScore> holeScores = holeScoreRepository.findByScorecard_IdOrderByHoleNumberAsc(scorecardId);
 
         ScorecardDetailResponse response = new ScorecardDetailResponse();
@@ -48,14 +52,13 @@ public class ScorecardQueryService {
         response.setGrossScore(scorecard.getGrossScore());
         response.setAdjustedGrossScore(scorecard.getAdjustedGrossScore());
         response.setNetScore(scorecard.getNetScore());
-        response.setTeeName(scorecard.getRound().getStandardRoundTee() != null
-                ? scorecard.getRound().getStandardRoundTee().getTeeName()
+        response.setTeeName(scorecard.getRound().getDefaultRoundTee() != null
+                ? scorecard.getRound().getDefaultRoundTee().getTeeName()
                 : null);
-        response.setAlternateTeeName(scorecard.getRound().getAlternateRoundTee() != null
-                ? scorecard.getRound().getAlternateRoundTee().getTeeName()
-                : null);
-        response.setCurrentTeeName(resolveCurrentTeeName(scorecard));
-        response.setUseAlternateTee(isUsingAlternateTee(scorecard));
+        response.setAlternateTeeName(null);
+        response.setCurrentTeeName(effectiveRoundTee != null ? effectiveRoundTee.getTeeName() : null);
+        response.setUseAlternateTee(false);
+
         Map<Integer, HoleScore> holeScoreByNumber = new HashMap<>();
         for (HoleScore holeScore : holeScores) {
             if (holeScore.getHoleNumber() != null) {
@@ -63,10 +66,9 @@ public class ScorecardQueryService {
             }
         }
 
-        RoundTee roundTee = scorecard.getRoundTee();
-        if (roundTee != null && roundTee.getId() != null) {
+        if (effectiveRoundTee != null && effectiveRoundTee.getId() != null) {
             List<RoundTeeHole> roundTeeHoles =
-                    roundTeeHoleRepository.findByRoundTee_IdOrderByHoleNumberAsc(roundTee.getId());
+                    roundTeeHoleRepository.findByRoundTee_IdOrderByHoleNumberAsc(effectiveRoundTee.getId());
 
             for (RoundTeeHole roundTeeHole : roundTeeHoles) {
                 ScorecardHoleResponse hole = new ScorecardHoleResponse();
@@ -93,28 +95,5 @@ public class ScorecardQueryService {
         }
 
         return response;
-    }
-    private boolean isUsingAlternateTee(Scorecard scorecard) {
-        if (scorecard == null || scorecard.getRound() == null) {
-            return false;
-        }
-
-        RoundTee currentRoundTee = scorecard.getRoundTee();
-        RoundTee alternateRoundTee = scorecard.getRound().getAlternateRoundTee();
-
-        if (currentRoundTee == null || alternateRoundTee == null) {
-            return false;
-        }
-
-        if (currentRoundTee.getId() == null || alternateRoundTee.getId() == null) {
-            return false;
-        }
-
-        return currentRoundTee.getId().equals(alternateRoundTee.getId());
-    }
-    
-    private String resolveCurrentTeeName(Scorecard scorecard) {
-        RoundTee roundTee = scorecard.getRoundTee();
-        return roundTee != null ? roundTee.getTeeName() : null;
     }
 }

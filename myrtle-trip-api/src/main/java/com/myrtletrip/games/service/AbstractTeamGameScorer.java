@@ -184,17 +184,31 @@ public abstract class AbstractTeamGameScorer implements RoundGameScorer {
     }
 
     protected List<Integer> sortedHoleNets(TeamScoringData team, int holeNumber) {
-        return team.getPlayers().stream()
-                .map(p -> requirePlayerHole(p, holeNumber).getNet())
-                .sorted()
-                .toList();
+        List<Integer> values = new ArrayList<>();
+
+        for (PlayerScoringData player : team.getPlayers()) {
+            PlayerHoleScoringData hole = requirePlayerHole(player, holeNumber);
+            if (hole.getNet() != null) {
+                values.add(hole.getNet());
+            }
+        }
+
+        values.sort(Comparator.naturalOrder());
+        return values;
     }
 
     protected List<Integer> sortedHoleGrosses(TeamScoringData team, int holeNumber) {
-        return team.getPlayers().stream()
-                .map(p -> requirePlayerHole(p, holeNumber).getGross())
-                .sorted()
-                .toList();
+        List<Integer> values = new ArrayList<>();
+
+        for (PlayerScoringData player : team.getPlayers()) {
+            PlayerHoleScoringData hole = requirePlayerHole(player, holeNumber);
+            if (hole.getGross() != null) {
+                values.add(hole.getGross());
+            }
+        }
+
+        values.sort(Comparator.naturalOrder());
+        return values;
     }
 
     protected int sumLowest(List<Integer> values, int count) {
@@ -202,6 +216,10 @@ public abstract class AbstractTeamGameScorer implements RoundGameScorer {
             throw new IllegalStateException("Not enough scores to sum lowest " + count);
         }
         return values.stream().limit(count).mapToInt(Integer::intValue).sum();
+    }
+
+    protected boolean hasEnoughScores(List<Integer> values, int count) {
+        return values != null && values.size() >= count;
     }
 
     protected void requireExactPlayerCount(TeamScoringData team, int expected, String gameName) {

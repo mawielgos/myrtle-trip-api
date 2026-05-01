@@ -46,6 +46,11 @@ public class RoundGameScoringService {
     public RoundGameResult getRoundResult(Long roundId) {
         Round round = loadRound(roundId);
         RoundScoringData data = roundScoringDataService.build(round);
+
+        if (!isCompleteForTeamGameScoring(round, data)) {
+            return createUnscoredResult(data);
+        }
+
         RoundGameScorer scorer = findScorer(round.getFormat());
         return scorer.scoreRound(data);
     }
@@ -54,12 +59,116 @@ public class RoundGameScoringService {
     public RoundGameResult recalculateRound(Long roundId) {
         Round round = loadRound(roundId);
         RoundScoringData data = roundScoringDataService.build(round);
+
+        clearUsedHoleScoreFlags(round);
+
+        if (!isCompleteForTeamGameScoring(round, data)) {
+            return createUnscoredResult(data);
+        }
+
         RoundGameScorer scorer = findScorer(round.getFormat());
         RoundGameResult result = scorer.scoreRound(data);
 
         markUsedHoleScores(round, data);
 
         return result;
+    }
+
+
+    private RoundGameResult createUnscoredResult(RoundScoringData data) {
+        RoundGameResult result = new RoundGameResult();
+        result.setRoundId(data.getRoundId());
+        result.setFormat(data.getFormat());
+
+        for (TeamScoringData team : data.getTeams()) {
+            com.myrtletrip.games.dto.TeamGameResult teamResult = new com.myrtletrip.games.dto.TeamGameResult();
+            teamResult.setTeamId(team.getTeamId());
+            teamResult.setTeamName(team.getTeamName());
+            result.getTeams().add(teamResult);
+        }
+
+        return result;
+    }
+
+    private boolean isCompleteForTeamGameScoring(Round round, RoundScoringData data) {
+        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+            return isCompleteTeamScrambleData(data);
+        }
+
+        return isCompletePlayerScoreData(data);
+    }
+
+    private boolean isCompletePlayerScoreData(RoundScoringData data) {
+        for (TeamScoringData team : data.getTeams()) {
+            for (PlayerScoringData player : team.getPlayers()) {
+                if (!playerHasCompleteEighteenHoleScore(player)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private boolean playerHasCompleteEighteenHoleScore(PlayerScoringData player) {
+        for (int holeNumber = 1; holeNumber <= 18; holeNumber++) {
+            PlayerHoleScoringData hole = findPlayerHole(player, holeNumber);
+            if (hole == null || hole.getGross() == null || hole.getNet() == null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private PlayerHoleScoringData findPlayerHole(PlayerScoringData player, int holeNumber) {
+        for (PlayerHoleScoringData hole : player.getHoles()) {
+            if (hole.getHoleNumber() != null && hole.getHoleNumber() == holeNumber) {
+                return hole;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isCompleteTeamScrambleData(RoundScoringData data) {
+        for (TeamScoringData team : data.getTeams()) {
+            if (team.getScrambleTotalScore() != null) {
+                continue;
+            }
+
+            for (int holeNumber = 1; holeNumber <= 18; holeNumber++) {
+                if (!teamHasScrambleScore(team, holeNumber)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private boolean teamHasScrambleScore(TeamScoringData team, int holeNumber) {
+        for (com.myrtletrip.games.model.TeamHoleScoringData hole : team.getScrambleHoleScores()) {
+            if (hole.getHoleNumber() != null
+                    && hole.getHoleNumber() == holeNumber
+                    && hole.getGross() != null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void clearUsedHoleScoreFlags(Round round) {
+        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+            return;
+        }
+
+        List<HoleScore> roundHoleScores = holeScoreRepository.findByScorecard_Round_Id(round.getId());
+        for (HoleScore holeScore : roundHoleScores) {
+            holeScore.setUsedInTeamGame(Boolean.FALSE);
+        }
+        holeScoreRepository.saveAll(roundHoleScores);
     }
 
     private Round loadRound(Long roundId) {
@@ -81,11 +190,7 @@ public class RoundGameScoringService {
             return;
         }
 
-        List<HoleScore> roundHoleScores = holeScoreRepository.findByScorecard_Round_Id(round.getId());
-        for (HoleScore holeScore : roundHoleScores) {
-            holeScore.setUsedInTeamGame(Boolean.FALSE);
-        }
-        holeScoreRepository.saveAll(roundHoleScores);
+        clearUsedHoleScoreFlags(round);
 
         List<Scorecard> scorecards = scorecardRepository.findByRound_Id(round.getId());
         Map<Long, Scorecard> scorecardByPlayerId = new HashMap<Long, Scorecard>();

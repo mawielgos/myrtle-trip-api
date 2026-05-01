@@ -13,4 +13,6 @@ public interface TeamHoleScoreRepository extends JpaRepository<TeamHoleScore, Lo
     List<TeamHoleScore> findByRoundTeam_IdOrderByHoleNumberAsc(Long roundTeamId);
 
     List<TeamHoleScore> findByRoundTeam_Round_IdOrderByRoundTeam_TeamNumberAscHoleNumberAsc(Long roundId);
+
+    void deleteByRoundTeam_Id(Long roundTeamId);
 }

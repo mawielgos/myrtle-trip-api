@@ -1,5 +1,6 @@
 package com.myrtletrip.round.service;
 
+import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.round.dto.RoundPlayerStatusResponse;
 import com.myrtletrip.round.dto.RoundScorecardSummaryResponse;
 import com.myrtletrip.round.dto.RoundStatusResponse;
@@ -23,15 +24,18 @@ public class RoundQueryService {
     private final RoundRepository roundRepository;
     private final ScorecardRepository scorecardRepository;
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
+    private final RoundTeeResolver roundTeeResolver;
 
     public RoundQueryService(
             RoundRepository roundRepository,
             ScorecardRepository scorecardRepository,
-            RoundTeamPlayerRepository roundTeamPlayerRepository
+            RoundTeamPlayerRepository roundTeamPlayerRepository,
+            RoundTeeResolver roundTeeResolver
     ) {
         this.roundRepository = roundRepository;
         this.scorecardRepository = scorecardRepository;
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
+        this.roundTeeResolver = roundTeeResolver;
     }
 
     @Transactional(readOnly = true)
@@ -45,12 +49,12 @@ public class RoundQueryService {
         dto.setRoundId(round.getId());
         dto.setTripId(round.getTrip() != null ? round.getTrip().getId() : null);
         dto.setCourseName(resolveCourseName(round));
-        dto.setTeeName(resolveStandardTeeName(round));
-        dto.setAlternateTeeName(resolveAlternateTeeName(round));
+        dto.setTeeName(resolveDefaultTeeName(round));
+        dto.setAlternateTeeName(null);
         dto.setFormat(round.getFormat() != null ? round.getFormat().name() : null);
         dto.setRoundDate(round.getRoundDate());
         dto.setFinalized(round.getFinalized());
-        
+
         List<RoundPlayerStatusResponse> playerStatuses = new java.util.ArrayList<>();
         for (Scorecard scorecard : scorecards) {
             playerStatuses.add(toPlayerStatus(scorecard));
@@ -109,17 +113,30 @@ public class RoundQueryService {
 
     private RoundPlayerStatusResponse toPlayerStatus(Scorecard scorecard) {
         RoundPlayerStatusResponse dto = new RoundPlayerStatusResponse();
+
+        Player player = scorecard.getPlayer();
+        RoundTee resolvedTee = roundTeeResolver.resolve(scorecard);
+
         dto.setScorecardId(scorecard.getId());
-        dto.setPlayerId(scorecard.getPlayer().getId());
-        dto.setPlayerName(scorecard.getPlayer().getDisplayName());
-        dto.setUseAlternateTee(isUsingAlternateTee(scorecard));
+        dto.setPlayerId(player.getId());
+        dto.setPlayerName(player.getDisplayName());
+        dto.setGender(normalizeGender(player.getGender()));
+        dto.setUseAlternateTee(false);
+
+        dto.setRoundTeeId(resolvedTee != null ? resolvedTee.getId() : null);
+        dto.setRoundTeeName(resolvedTee != null ? resolvedTee.getTeeName() : null);
+
         dto.setCourseHandicap(scorecard.getCourseHandicap());
         dto.setPlayingHandicap(scorecard.getPlayingHandicap());
+
         return dto;
     }
 
     private RoundScorecardSummaryResponse toRoundScorecardSummary(Scorecard scorecard) {
         RoundScorecardSummaryResponse dto = new RoundScorecardSummaryResponse();
+
+        RoundTee resolvedTee = roundTeeResolver.resolve(scorecard);
+
         dto.setScorecardId(scorecard.getId());
         dto.setPlayerId(scorecard.getPlayer().getId());
         dto.setPlayerName(scorecard.getPlayer().getDisplayName());
@@ -134,31 +151,30 @@ public class RoundQueryService {
         dto.setGrossScore(scorecard.getGrossScore());
         dto.setAdjustedGrossScore(scorecard.getAdjustedGrossScore());
         dto.setNetScore(scorecard.getNetScore());
-        dto.setTeeName(resolveStandardTeeName(scorecard.getRound()));
-        dto.setAlternateTeeName(resolveAlternateTeeName(scorecard.getRound()));
-        dto.setUseAlternateTee(isUsingAlternateTee(scorecard));
-        dto.setCurrentTeeName(resolveCurrentTeeName(scorecard));
+
+        dto.setTeeName(resolvedTee != null ? resolvedTee.getTeeName() : null);
+        dto.setAlternateTeeName(null);
+        dto.setUseAlternateTee(false);
+        dto.setCurrentTeeName(resolvedTee != null ? resolvedTee.getTeeName() : null);
 
         return dto;
     }
 
-    private boolean isUsingAlternateTee(Scorecard scorecard) {
-        if (scorecard == null || scorecard.getRound() == null) {
-            return false;
+    private String normalizeGender(String gender) {
+        if (gender == null || gender.trim().isEmpty()) {
+            return "M";
         }
 
-        RoundTee currentRoundTee = scorecard.getRoundTee();
-        RoundTee alternateRoundTee = scorecard.getRound().getAlternateRoundTee();
+        String normalized = gender.trim().toUpperCase();
 
-        if (currentRoundTee == null || alternateRoundTee == null) {
-            return false;
+        if ("F".equals(normalized)
+                || "FEMALE".equals(normalized)
+                || "W".equals(normalized)
+                || "WOMAN".equals(normalized)) {
+            return "F";
         }
 
-        if (currentRoundTee.getId() == null || alternateRoundTee.getId() == null) {
-            return false;
-        }
-
-        return currentRoundTee.getId().equals(alternateRoundTee.getId());
+        return "M";
     }
 
     private String resolveCourseName(Round round) {
@@ -170,35 +186,19 @@ public class RoundQueryService {
             return round.getCourse().getName();
         }
 
-        RoundTee standardRoundTee = round.getStandardRoundTee();
-        if (standardRoundTee != null && standardRoundTee.getCourseName() != null) {
-            return standardRoundTee.getCourseName();
-        }
-
-        RoundTee alternateRoundTee = round.getAlternateRoundTee();
-        if (alternateRoundTee != null && alternateRoundTee.getCourseName() != null) {
-            return alternateRoundTee.getCourseName();
+        RoundTee defaultRoundTee = round.getDefaultRoundTee();
+        if (defaultRoundTee != null && defaultRoundTee.getCourseName() != null) {
+            return defaultRoundTee.getCourseName();
         }
 
         return null;
     }
 
-    private String resolveStandardTeeName(Round round) {
-        if (round == null || round.getStandardRoundTee() == null) {
+    private String resolveDefaultTeeName(Round round) {
+        if (round == null || round.getDefaultRoundTee() == null) {
             return null;
         }
-        return round.getStandardRoundTee().getTeeName();
-    }
 
-    private String resolveAlternateTeeName(Round round) {
-        if (round == null || round.getAlternateRoundTee() == null) {
-            return null;
-        }
-        return round.getAlternateRoundTee().getTeeName();
-    }
-
-    private String resolveCurrentTeeName(Scorecard scorecard) {
-        RoundTee roundTee = scorecard.getRoundTee();
-        return roundTee != null ? roundTee.getTeeName() : null;
+        return round.getDefaultRoundTee().getTeeName();
     }
 }

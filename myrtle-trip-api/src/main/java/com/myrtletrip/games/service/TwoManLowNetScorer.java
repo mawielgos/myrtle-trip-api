@@ -30,6 +30,10 @@ public class TwoManLowNetScorer extends AbstractTeamGameScorer {
                 List<Integer> grosses = sortedHoleGrosses(team, holeNumber);
                 List<Integer> nets = sortedHoleNets(team, holeNumber);
 
+                if (!hasEnoughScores(grosses, 1) || !hasEnoughScores(nets, 1)) {
+                    continue;
+                }
+
                 int holeGross = sumLowest(grosses, 1);
                 int holeNet = sumLowest(nets, 1);
 

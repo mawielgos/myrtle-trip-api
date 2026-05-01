@@ -11,6 +11,7 @@ public class PlayerListResponse {
     private String handicapMethod;
     private String email;
     private String cell;
+    private String gender;
 
     public PlayerListResponse() {
     }
@@ -86,4 +87,13 @@ public class PlayerListResponse {
     public void setCell(String cell) {
         this.cell = cell;
     }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
 }
+

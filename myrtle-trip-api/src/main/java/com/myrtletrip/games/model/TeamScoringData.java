@@ -7,6 +7,7 @@ public class TeamScoringData {
 
     private Long teamId;
     private String teamName;
+    private Integer scrambleTotalScore;
     private List<PlayerScoringData> players = new ArrayList<>();
     private List<TeamHoleScoringData> scrambleHoleScores = new ArrayList<>();
 
@@ -24,6 +25,14 @@ public class TeamScoringData {
 
     public void setTeamName(String teamName) {
         this.teamName = teamName;
+    }
+
+    public Integer getScrambleTotalScore() {
+        return scrambleTotalScore;
+    }
+
+    public void setScrambleTotalScore(Integer scrambleTotalScore) {
+        this.scrambleTotalScore = scrambleTotalScore;
     }
 
     public List<PlayerScoringData> getPlayers() {

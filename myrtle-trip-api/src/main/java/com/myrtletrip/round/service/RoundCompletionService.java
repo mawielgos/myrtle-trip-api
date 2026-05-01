@@ -105,6 +105,10 @@ public class RoundCompletionService {
         }
 
         for (RoundTeam team : teams) {
+            if (team.getScrambleTotalScore() != null) {
+                continue;
+            }
+
             List<TeamHoleScore> holeScores =
                     teamHoleScoreRepository.findByRoundTeam_IdOrderByHoleNumberAsc(team.getId());
 

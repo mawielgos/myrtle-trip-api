@@ -36,6 +36,10 @@ public class OneTwoThreeScorer extends AbstractTeamGameScorer {
                     default -> 3;
                 };
 
+                if (!hasEnoughScores(grosses, countToUse) || !hasEnoughScores(nets, countToUse)) {
+                    continue;
+                }
+
                 int holeGross = sumLowest(grosses, countToUse);
                 int holeNet = sumLowest(nets, countToUse);
 

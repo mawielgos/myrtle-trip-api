@@ -4,15 +4,21 @@ import com.myrtletrip.trip.dto.GhinFixRowResponse;
 import com.myrtletrip.trip.dto.SaveGhinFixRequest;
 import com.myrtletrip.trip.dto.SaveTripPlannedRoundsRequest;
 import com.myrtletrip.trip.dto.TripDetailResponse;
+import com.myrtletrip.trip.dto.SaveTripBillInventoryRequest;
+import com.myrtletrip.trip.dto.TripBillInventoryResponse;
 import com.myrtletrip.trip.dto.TripListResponse;
 import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
 import com.myrtletrip.trip.dto.TripPlayerResponse;
 import com.myrtletrip.trip.dto.TripRoundListResponse;
 import com.myrtletrip.trip.dto.TripSetupRequest;
+import com.myrtletrip.scorehistory.dto.ManualScoreHistoryEntryResponse;
+import com.myrtletrip.scorehistory.dto.SaveManualScoreHistoryEntryRequest;
+import com.myrtletrip.scorehistory.service.ManualScoreHistoryService;
 import com.myrtletrip.standings.dto.FourDayStandingsResponse;
 import com.myrtletrip.standings.service.FourDayStandingsService;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.service.TripGhinFixService;
+import com.myrtletrip.trip.service.TripBillInventoryService;
 import com.myrtletrip.trip.service.TripInitializationService;
 import com.myrtletrip.trip.service.TripService;
 import org.springframework.web.bind.annotation.*;
@@ -27,16 +33,22 @@ public class TripController {
     private final TripInitializationService tripInitializationService;
     private final TripGhinFixService tripGhinFixService;
     private final FourDayStandingsService fourDayStandingsService;
+    private final TripBillInventoryService tripBillInventoryService;
+    private final ManualScoreHistoryService manualScoreHistoryService;
     
     public TripController(TripService tripService,
             TripInitializationService tripInitializationService,
             TripGhinFixService tripGhinFixService,
-            FourDayStandingsService fourDayStandingsService) {
+            FourDayStandingsService fourDayStandingsService,
+            TripBillInventoryService tripBillInventoryService,
+            ManualScoreHistoryService manualScoreHistoryService) {
     	
 		this.tripService = tripService;
 		this.tripInitializationService = tripInitializationService;
 		this.tripGhinFixService = tripGhinFixService;
 		this.fourDayStandingsService = fourDayStandingsService;
+        this.tripBillInventoryService = tripBillInventoryService;
+        this.manualScoreHistoryService = manualScoreHistoryService;
     }
     @PostMapping
     public Long createTrip(@RequestBody TripSetupRequest request) {
@@ -94,6 +106,18 @@ public class TripController {
     public FourDayStandingsResponse getFourDayStandings(@PathVariable Long tripId) {
         return fourDayStandingsService.getFourDayStandings(tripId);
     }
+
+    @GetMapping("/{tripId}/bill-inventory")
+    public TripBillInventoryResponse getTripBillInventory(@PathVariable Long tripId) {
+        return tripBillInventoryService.getBillInventory(tripId);
+    }
+
+    @PutMapping("/{tripId}/bill-inventory")
+    public TripBillInventoryResponse saveTripBillInventory(@PathVariable Long tripId,
+                                                           @RequestBody SaveTripBillInventoryRequest request) {
+        return tripBillInventoryService.saveBillInventory(tripId, request);
+    }
+
     
     @PostMapping("/{tripId}/initialize-ghin")
     public void initializeTripGhin(@PathVariable Long tripId) throws Exception {
@@ -115,6 +139,36 @@ public class TripController {
     @PostMapping("/{tripId}/initialize")
     public void initializeTrip(@PathVariable Long tripId) throws Exception {
         tripInitializationService.initializeTrip(tripId);
+    }
+
+    @GetMapping("/{tripId}/manual-score-history")
+    public List<ManualScoreHistoryEntryResponse> getManualScoreHistory(@PathVariable Long tripId) {
+        return manualScoreHistoryService.getManualEntries(tripId);
+    }
+
+    @PostMapping("/{tripId}/manual-score-history")
+    public ManualScoreHistoryEntryResponse createManualScoreHistory(@PathVariable Long tripId,
+                                                                    @RequestBody SaveManualScoreHistoryEntryRequest request) {
+        return manualScoreHistoryService.createManualEntry(tripId, request);
+    }
+
+    @PostMapping("/{tripId}/manual-score-history/bulk")
+    public List<ManualScoreHistoryEntryResponse> createManualScoreHistoryBulk(@PathVariable Long tripId,
+                                                                              @RequestBody List<SaveManualScoreHistoryEntryRequest> requests) {
+        return manualScoreHistoryService.createManualEntries(tripId, requests);
+    }
+
+    @PutMapping("/{tripId}/manual-score-history/{scoreHistoryEntryId}")
+    public ManualScoreHistoryEntryResponse updateManualScoreHistory(@PathVariable Long tripId,
+                                                                    @PathVariable Long scoreHistoryEntryId,
+                                                                    @RequestBody SaveManualScoreHistoryEntryRequest request) {
+        return manualScoreHistoryService.updateManualEntry(tripId, scoreHistoryEntryId, request);
+    }
+
+    @DeleteMapping("/{tripId}/manual-score-history/{scoreHistoryEntryId}")
+    public void deleteManualScoreHistory(@PathVariable Long tripId,
+                                         @PathVariable Long scoreHistoryEntryId) {
+        manualScoreHistoryService.deleteManualEntry(tripId, scoreHistoryEntryId);
     }
 
     @DeleteMapping("/{tripId}")

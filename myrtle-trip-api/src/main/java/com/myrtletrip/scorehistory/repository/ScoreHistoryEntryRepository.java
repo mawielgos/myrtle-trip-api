@@ -70,6 +70,16 @@ public interface ScoreHistoryEntryRepository extends JpaRepository<ScoreHistoryE
             String sourceType
     );
 
+    List<ScoreHistoryEntry> findByHandicapGroupCodeAndSourceTypeOrderByPlayer_DisplayNameAscScoreDateDescIdDesc(
+            String handicapGroupCode,
+            String sourceType
+    );
+
+    List<ScoreHistoryEntry> findByHandicapGroupCodeAndSourceTypeOrderByPlayer_DisplayNameAscPostingOrderAscIdAsc(
+            String handicapGroupCode,
+            String sourceType
+    );
+
     Optional<ScoreHistoryEntry> findByIdAndHandicapGroupCodeAndSourceType(
             Long id,
             String handicapGroupCode,

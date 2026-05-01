@@ -4,6 +4,7 @@ import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.model.RoundTeeRole;
+import com.myrtletrip.round.service.RoundTeeResolver;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scorehistory.entity.ScoreHistoryEntry;
@@ -23,11 +24,14 @@ public class RoundScoreHistorySyncService {
 
     private final ScoreHistoryEntryRepository scoreHistoryEntryRepository;
     private final ScorecardRepository scorecardRepository;
+    private final RoundTeeResolver roundTeeResolver;
 
     public RoundScoreHistorySyncService(ScoreHistoryEntryRepository scoreHistoryEntryRepository,
-                                        ScorecardRepository scorecardRepository) {
+                                        ScorecardRepository scorecardRepository,
+                                        RoundTeeResolver roundTeeResolver) {
         this.scoreHistoryEntryRepository = scoreHistoryEntryRepository;
         this.scorecardRepository = scorecardRepository;
+        this.roundTeeResolver = roundTeeResolver;
     }
 
     @Transactional
@@ -55,6 +59,11 @@ public class RoundScoreHistorySyncService {
             return;
         }
 
+        RoundTee effectiveRoundTee = roundTeeResolver.resolve(scorecard);
+        if (scorecard.getRoundTee() == null) {
+            scorecard.setRoundTee(effectiveRoundTee);
+        }
+
         validateFinalizedScorecard(scorecard);
 
         Optional<ScoreHistoryEntry> existingOpt = scoreHistoryEntryRepository
@@ -66,8 +75,8 @@ public class RoundScoreHistorySyncService {
         entry.setCourse(round.getCourse());
         entry.setScoreDate(round.getRoundDate());
         entry.setCourseName(round.getCourse().getName());
-        entry.setCourseRating(resolveCourseRating(scorecard));
-        entry.setSlope(resolveSlope(scorecard));
+        entry.setCourseRating(effectiveRoundTee.getCourseRating());
+        entry.setSlope(effectiveRoundTee.getSlope());
         entry.setGrossScore(scorecard.getGrossScore());
         entry.setAdjustedGrossScore(scorecard.getAdjustedGrossScore());
         entry.setDifferential(calculateDifferential(
@@ -93,7 +102,8 @@ public class RoundScoreHistorySyncService {
             );
         }
 
-        if (scorecard.getRoundTee() == null) {
+        RoundTee effectiveRoundTee = roundTeeResolver.resolve(scorecard);
+        if (effectiveRoundTee == null || effectiveRoundTee.getId() == null) {
             throw new IllegalStateException(
                     "Finalized round correction requires a round tee for playerId="
                             + scorecard.getPlayer().getId()
@@ -109,25 +119,8 @@ public class RoundScoreHistorySyncService {
     }
 
     private boolean isAlternateTee(Scorecard scorecard) {
-        RoundTee roundTee = scorecard.getRoundTee();
+        RoundTee roundTee = roundTeeResolver.resolve(scorecard);
         return roundTee != null && roundTee.getTeeRole() == RoundTeeRole.ALTERNATE;
-    }
-
-    private BigDecimal resolveCourseRating(Scorecard scorecard) {
-        RoundTee roundTee = requireRoundTee(scorecard);
-        return roundTee.getCourseRating();
-    }
-
-    private Integer resolveSlope(Scorecard scorecard) {
-        RoundTee roundTee = requireRoundTee(scorecard);
-        return roundTee.getSlope();
-    }
-
-    private RoundTee requireRoundTee(Scorecard scorecard) {
-        if (scorecard.getRoundTee() == null) {
-            throw new IllegalStateException("scorecard.roundTee is required");
-        }
-        return scorecard.getRoundTee();
     }
 
     private BigDecimal calculateDifferential(Integer adjustedGrossScore,

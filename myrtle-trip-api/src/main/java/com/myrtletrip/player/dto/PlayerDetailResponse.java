@@ -13,6 +13,7 @@ public class PlayerDetailResponse {
     private String venmoId;
     private String zelleId;
     private String handicapMethod;
+    private String gender;
 
     public PlayerDetailResponse() {
     }
@@ -104,4 +105,13 @@ public class PlayerDetailResponse {
     public void setHandicapMethod(String handicapMethod) {
         this.handicapMethod = handicapMethod;
     }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
 }
+

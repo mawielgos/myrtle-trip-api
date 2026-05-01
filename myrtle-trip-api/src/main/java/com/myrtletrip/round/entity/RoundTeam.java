@@ -20,6 +20,9 @@ public class RoundTeam {
     @Column(name = "team_name", nullable = false, length = 100)
     private String teamName;
 
+    @Column(name = "scramble_total_score")
+    private Integer scrambleTotalScore;
+
     public Long getId() {
         return id;
     }
@@ -46,5 +49,13 @@ public class RoundTeam {
 
     public void setTeamName(String teamName) {
         this.teamName = teamName;
+    }
+
+    public Integer getScrambleTotalScore() {
+        return scrambleTotalScore;
+    }
+
+    public void setScrambleTotalScore(Integer scrambleTotalScore) {
+        this.scrambleTotalScore = scrambleTotalScore;
     }
 }

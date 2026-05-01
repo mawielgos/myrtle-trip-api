@@ -1,12 +1,14 @@
 package com.myrtletrip.round.service;
 
 import com.myrtletrip.games.service.RoundGameScoringService;
+import com.myrtletrip.prize.service.TripPrizeRecalculationService;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.service.ScoringService;
 import com.myrtletrip.scorehistory.service.RoundScoreHistorySyncService;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,19 +23,25 @@ public class RoundRecalculationOrchestrationService {
     private final RoundGameScoringService roundGameScoringService;
     private final RoundScoreHistorySyncService roundScoreHistorySyncService;
     private final ScorecardHandicapService scorecardHandicapService;
+    private final TripPrizeRecalculationService tripPrizeRecalculationService;
+    private final EntityManager entityManager;
 
     public RoundRecalculationOrchestrationService(RoundRepository roundRepository,
                                                   ScorecardRepository scorecardRepository,
                                                   ScoringService scoringService,
                                                   RoundGameScoringService roundGameScoringService,
                                                   RoundScoreHistorySyncService roundScoreHistorySyncService,
-                                                  ScorecardHandicapService scorecardHandicapService) {
+                                                  ScorecardHandicapService scorecardHandicapService,
+                                                  TripPrizeRecalculationService tripPrizeRecalculationService,
+                                                  EntityManager entityManager) {
         this.roundRepository = roundRepository;
         this.scorecardRepository = scorecardRepository;
         this.scoringService = scoringService;
         this.roundGameScoringService = roundGameScoringService;
         this.roundScoreHistorySyncService = roundScoreHistorySyncService;
         this.scorecardHandicapService = scorecardHandicapService;
+        this.tripPrizeRecalculationService = tripPrizeRecalculationService;
+        this.entityManager = entityManager;
     }
 
     @Transactional
@@ -56,6 +64,14 @@ public class RoundRecalculationOrchestrationService {
         }
 
         recalculateDownstreamRounds(round);
+
+        Long tripId = round.getTrip().getId();
+
+        // Corrections can change Myrtles Cup standings and all persisted payout rows.
+        // Flush and clear so the prize recalculation reads the just-saved Scorecard/HoleScore data.
+        entityManager.flush();
+        entityManager.clear();
+        tripPrizeRecalculationService.recalculate(tripId);
     }
 
     private void recalculateCurrentRound(Round round) {

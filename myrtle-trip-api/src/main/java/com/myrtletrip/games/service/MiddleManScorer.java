@@ -30,6 +30,10 @@ public class MiddleManScorer extends AbstractTeamGameScorer {
                 List<Integer> grosses = sortedHoleGrosses(team, holeNumber);
                 List<Integer> nets = sortedHoleNets(team, holeNumber);
 
+                if (!hasEnoughScores(grosses, 4) || !hasEnoughScores(nets, 4)) {
+                    continue;
+                }
+
                 int holeGross = grosses.get(1) + grosses.get(2);
                 int holeNet = nets.get(1) + nets.get(2);
 

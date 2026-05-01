@@ -42,6 +42,9 @@ public class Player {
     @Column(name = "handicap_method", length = 30)
     private String handicapMethod;
 
+    @Column(name = "gender", length = 1, nullable = false)
+    private String gender = "M";
+
     public String getHandicapMethod() {
         return handicapMethod;
     }
@@ -97,4 +100,12 @@ public class Player {
 	public void setLegacyPlayerNumber(Integer legacyPlayerNumber) {
 		this.legacyPlayerNumber = legacyPlayerNumber;
 	}
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
 }

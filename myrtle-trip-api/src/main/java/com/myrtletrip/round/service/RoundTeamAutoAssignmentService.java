@@ -12,12 +12,15 @@ import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class RoundTeamAutoAssignmentService {
@@ -27,23 +30,35 @@ public class RoundTeamAutoAssignmentService {
     private final RoundTeamRepository roundTeamRepository;
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final ScorecardRepository scorecardRepository;
+    private final TeamHoleScoreRepository teamHoleScoreRepository;
 
     public RoundTeamAutoAssignmentService(
             RoundRepository roundRepository,
             RoundGroupRepository roundGroupRepository,
             RoundTeamRepository roundTeamRepository,
             RoundTeamPlayerRepository roundTeamPlayerRepository,
-            ScorecardRepository scorecardRepository
+            ScorecardRepository scorecardRepository,
+            TeamHoleScoreRepository teamHoleScoreRepository
     ) {
         this.roundRepository = roundRepository;
         this.roundGroupRepository = roundGroupRepository;
         this.roundTeamRepository = roundTeamRepository;
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.scorecardRepository = scorecardRepository;
+        this.teamHoleScoreRepository = teamHoleScoreRepository;
     }
 
     @Transactional
     public void syncTeamsFromGroupsIfNeeded(Long roundId) {
+        syncTeamsFromGroups(roundId, false);
+    }
+
+    @Transactional
+    public void rebuildTeamsFromGroups(Long roundId) {
+        syncTeamsFromGroups(roundId, true);
+    }
+
+    private void syncTeamsFromGroups(Long roundId, boolean forceRebuild) {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
@@ -62,8 +77,13 @@ public class RoundTeamAutoAssignmentService {
             return;
         }
 
+        List<RoundTeam> existingTeams = roundTeamRepository.findByRound_IdOrderByTeamNumberAsc(roundId);
+        if (!forceRebuild && existingTeams != null && !existingTeams.isEmpty()) {
+            return;
+        }
+
         List<Scorecard> scorecards = scorecardRepository.findByRound_Id(roundId);
-        Map<Long, Scorecard> scorecardByPlayerId = new HashMap<>();
+        Map<Long, Scorecard> scorecardByPlayerId = new HashMap<Long, Scorecard>();
 
         for (Scorecard scorecard : scorecards) {
             if (scorecard.getPlayer() != null && scorecard.getPlayer().getId() != null) {
@@ -71,21 +91,45 @@ public class RoundTeamAutoAssignmentService {
             }
         }
 
-        // Clear existing scorecard team links first
+        Map<Integer, RoundTeam> existingTeamByNumber = new HashMap<Integer, RoundTeam>();
+        if (existingTeams != null) {
+            for (RoundTeam existingTeam : existingTeams) {
+                if (existingTeam.getTeamNumber() != null) {
+                    existingTeamByNumber.put(existingTeam.getTeamNumber(), existingTeam);
+                }
+            }
+        }
+
+        Set<Integer> activeTeamNumbers = new HashSet<Integer>();
+
+        // Clear scorecard team links first. We will re-link below using stable RoundTeam rows.
         for (Scorecard scorecard : scorecards) {
             scorecard.setTeam(null);
         }
         scorecardRepository.saveAll(scorecards);
 
-        // Remove existing round teams/players and rebuild from groups
+        // Rebuild team membership, but do not delete/recreate RoundTeam rows just because
+        // groups are being synced. Scramble scores live on RoundTeam and TeamHoleScore, so
+        // preserving the RoundTeam id is what keeps saved scramble scores from disappearing
+        // after returning through Trip Detail or refreshing round list data.
         roundTeamPlayerRepository.deleteByRoundTeam_Round_Id(roundId);
-        roundTeamRepository.deleteByRound_Id(roundId);
 
         for (RoundGroup group : groups) {
-            RoundTeam team = new RoundTeam();
-            team.setRound(round);
-            team.setTeamNumber(group.getGroupNumber());
-            team.setTeamName("Team " + group.getGroupNumber());
+            if (group.getGroupNumber() == null) {
+                continue;
+            }
+
+            Integer teamNumber = group.getGroupNumber();
+            activeTeamNumbers.add(teamNumber);
+
+            RoundTeam team = existingTeamByNumber.get(teamNumber);
+            if (team == null) {
+                team = new RoundTeam();
+                team.setRound(round);
+                team.setTeamNumber(teamNumber);
+            }
+
+            team.setTeamName("Team " + teamNumber);
             team = roundTeamRepository.save(team);
 
             List<RoundGroupPlayer> groupPlayers = group.getPlayers();
@@ -118,5 +162,19 @@ public class RoundTeamAutoAssignmentService {
         }
 
         scorecardRepository.saveAll(scorecards);
+
+        // Remove truly obsolete teams only after preserving/reusing matching team numbers.
+        // Delete team-hole scores first so obsolete scramble teams do not leave FK rows behind.
+        if (existingTeams != null) {
+            for (RoundTeam existingTeam : existingTeams) {
+                Integer teamNumber = existingTeam.getTeamNumber();
+                if (teamNumber != null && activeTeamNumbers.contains(teamNumber)) {
+                    continue;
+                }
+
+                teamHoleScoreRepository.deleteByRoundTeam_Id(existingTeam.getId());
+                roundTeamRepository.delete(existingTeam);
+            }
+        }
     }
 }

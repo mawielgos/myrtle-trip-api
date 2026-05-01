@@ -3,6 +3,7 @@ package com.myrtletrip.round.controller;
 import com.myrtletrip.round.dto.RoundGroupAssignmentRequest;
 import com.myrtletrip.round.dto.RoundGroupPageResponse;
 import com.myrtletrip.round.service.RoundGroupService;
+import com.myrtletrip.round.service.RoundRecalculationOrchestrationService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -10,9 +11,12 @@ import org.springframework.web.bind.annotation.*;
 public class RoundGroupController {
 
     private final RoundGroupService roundGroupService;
+    private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
 
-    public RoundGroupController(RoundGroupService roundGroupService) {
+    public RoundGroupController(RoundGroupService roundGroupService,
+                                RoundRecalculationOrchestrationService roundRecalculationOrchestrationService) {
         this.roundGroupService = roundGroupService;
+        this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
     }
 
     @GetMapping("/{roundId}/groups")
@@ -25,6 +29,8 @@ public class RoundGroupController {
             @PathVariable Long roundId,
             @RequestBody RoundGroupAssignmentRequest request
     ) {
-        return roundGroupService.saveRoundGroups(roundId, request);
+        RoundGroupPageResponse response = roundGroupService.saveRoundGroups(roundId, request);
+        roundRecalculationOrchestrationService.handlePostRoundChange(roundId);
+        return response;
     }
 }

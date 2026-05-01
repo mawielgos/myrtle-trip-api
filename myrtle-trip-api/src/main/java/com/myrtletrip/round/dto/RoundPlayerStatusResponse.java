@@ -5,7 +5,13 @@ public class RoundPlayerStatusResponse {
     private Long scorecardId;
     private Long playerId;
     private String playerName;
+    private String gender;
+
     private Boolean useAlternateTee;
+
+    private Long roundTeeId;
+    private String roundTeeName;
+
     private Integer courseHandicap;
     private Integer playingHandicap;
 
@@ -33,12 +39,36 @@ public class RoundPlayerStatusResponse {
         this.playerName = playerName;
     }
 
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+
     public Boolean getUseAlternateTee() {
         return useAlternateTee;
     }
 
     public void setUseAlternateTee(Boolean useAlternateTee) {
         this.useAlternateTee = useAlternateTee;
+    }
+
+    public Long getRoundTeeId() {
+        return roundTeeId;
+    }
+
+    public void setRoundTeeId(Long roundTeeId) {
+        this.roundTeeId = roundTeeId;
+    }
+
+    public String getRoundTeeName() {
+        return roundTeeName;
+    }
+
+    public void setRoundTeeName(String roundTeeName) {
+        this.roundTeeName = roundTeeName;
     }
 
     public Integer getCourseHandicap() {

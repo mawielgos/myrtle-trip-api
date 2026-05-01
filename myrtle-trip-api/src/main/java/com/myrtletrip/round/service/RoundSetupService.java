@@ -26,7 +26,9 @@ import com.myrtletrip.trip.repository.TripRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RoundSetupService {
@@ -66,28 +68,17 @@ public class RoundSetupService {
 
     @Transactional
     public Long startRound(RoundSetupRequest request) {
-
         Trip trip = tripRepository.findById(request.getTripId())
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found"));
 
         Course course = courseRepository.findById(request.getCourseId())
                 .orElseThrow(() -> new IllegalArgumentException("Course not found"));
 
-        CourseTee standardCourseTee = courseTeeRepository.findById(request.getStandardCourseTeeId())
-                .orElseThrow(() -> new IllegalArgumentException("Standard course tee not found"));
+        CourseTee defaultCourseTee = courseTeeRepository.findById(request.getDefaultCourseTeeId())
+                .orElseThrow(() -> new IllegalArgumentException("Default course tee not found"));
 
-        if (!standardCourseTee.getCourse().getId().equals(course.getId())) {
-            throw new IllegalArgumentException("Selected standard tee does not belong to the selected course");
-        }
-
-        CourseTee alternateCourseTee = null;
-        if (request.getAlternateCourseTeeId() != null) {
-            alternateCourseTee = courseTeeRepository.findById(request.getAlternateCourseTeeId())
-                    .orElseThrow(() -> new IllegalArgumentException("Alternate course tee not found"));
-
-            if (!alternateCourseTee.getCourse().getId().equals(course.getId())) {
-                throw new IllegalArgumentException("Selected alternate tee does not belong to the selected course");
-            }
+        if (!defaultCourseTee.getCourse().getId().equals(course.getId())) {
+            throw new IllegalArgumentException("Selected default tee does not belong to the selected course");
         }
 
         List<TripPlayer> roster = tripPlayerRepository.findByTrip(trip);
@@ -99,7 +90,6 @@ public class RoundSetupService {
         if (format == null) {
             throw new IllegalArgumentException("Round format is required");
         }
-
         if (request.getRoundDate() == null) {
             throw new IllegalArgumentException("Round date is required");
         }
@@ -117,52 +107,68 @@ public class RoundSetupService {
         round.setHandicapPercent(handicapPercent);
         round = roundRepository.save(round);
 
-        RoundTee standardRoundTee = createRoundTee(round, standardCourseTee, RoundTeeRole.STANDARD);
-        RoundTee alternateRoundTee = alternateCourseTee != null
-                ? createRoundTee(round, alternateCourseTee, RoundTeeRole.ALTERNATE)
-                : null;
+        Map<Long, RoundTee> roundTeeByCourseTeeId = createRoundTeeOptions(round, course, defaultCourseTee.getId());
+        RoundTee defaultRoundTee = roundTeeByCourseTeeId.get(defaultCourseTee.getId());
+        if (defaultRoundTee == null) {
+            throw new IllegalStateException("Default round tee was not created");
+        }
 
-        round.setStandardRoundTee(standardRoundTee);
-        round.setAlternateRoundTee(alternateRoundTee);
+        round.setDefaultRoundTee(defaultRoundTee);
         round = roundRepository.save(round);
 
         String handicapGroupCode = trip.getTripCode();
-
         for (TripPlayer tripPlayer : roster) {
             Player player = tripPlayer.getPlayer();
 
             Scorecard scorecard = new Scorecard();
             scorecard.setRound(round);
             scorecard.setPlayer(player);
-            scorecard.setRoundTee(standardRoundTee);
+            scorecard.setRoundTee(defaultRoundTee);
 
             roundHandicapService.populateCurrentHandicaps(scorecard, handicapGroupCode);
-
             scorecardRepository.save(scorecard);
         }
 
         return round.getId();
     }
 
+    private Map<Long, RoundTee> createRoundTeeOptions(Round round, Course course, Long defaultCourseTeeId) {
+        List<CourseTee> courseTees = courseTeeRepository.findByCourse_IdAndActiveTrueOrderByTeeNameAscEffectiveDateDesc(course.getId());
+        if (courseTees == null || courseTees.isEmpty()) {
+            throw new IllegalStateException("Course has no active tees");
+        }
+
+        Map<Long, RoundTee> result = new HashMap<>();
+        for (CourseTee courseTee : courseTees) {
+            if (courseTee == null || courseTee.getId() == null) {
+                continue;
+            }
+            if (!courseTee.isEligibleForGender("M") && !courseTee.isEligibleForGender("F")) {
+                continue;
+            }
+
+            RoundTeeRole role = courseTee.getId().equals(defaultCourseTeeId)
+                    ? RoundTeeRole.DEFAULT
+                    : RoundTeeRole.PLAYER_OPTION;
+            RoundTee roundTee = createRoundTee(round, courseTee, role);
+            result.put(courseTee.getId(), roundTee);
+        }
+
+        return result;
+    }
+
     private int determineNextRoundNumber(Long tripId) {
         List<Round> existingRounds = roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId);
-
         if (existingRounds == null || existingRounds.isEmpty()) {
             return 1;
         }
 
         int maxRoundNumber = 0;
-
         for (Round existingRound : existingRounds) {
-            if (existingRound == null || existingRound.getRoundNumber() == null) {
-                continue;
-            }
-
-            if (existingRound.getRoundNumber() > maxRoundNumber) {
+            if (existingRound != null && existingRound.getRoundNumber() != null && existingRound.getRoundNumber() > maxRoundNumber) {
                 maxRoundNumber = existingRound.getRoundNumber();
             }
         }
-
         return maxRoundNumber + 1;
     }
 
@@ -180,9 +186,7 @@ public class RoundSetupService {
 
         List<CourseHole> sourceHoles = courseHoleRepository.findByCourseTee_IdOrderByHoleNumberAsc(sourceCourseTee.getId());
         if (sourceHoles.size() != 18) {
-            throw new IllegalStateException(
-                    "Expected 18 holes for course tee " + sourceCourseTee.getId() + " but found " + sourceHoles.size()
-            );
+            throw new IllegalStateException("Expected 18 holes for course tee " + sourceCourseTee.getId() + " but found " + sourceHoles.size());
         }
 
         for (CourseHole sourceHole : sourceHoles) {
@@ -199,14 +203,10 @@ public class RoundSetupService {
     }
 
     private int normalizeHandicapPercent(Integer handicapPercent) {
-        if (handicapPercent == null) {
-            return 100;
-        }
-
+        if (handicapPercent == null) return 100;
         if (handicapPercent < 0 || handicapPercent > 100) {
             throw new IllegalArgumentException("handicapPercent must be between 0 and 100");
         }
-
         return handicapPercent;
     }
 }

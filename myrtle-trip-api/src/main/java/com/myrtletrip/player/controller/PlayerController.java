@@ -98,6 +98,11 @@ public class PlayerController {
         if (isBlank(request.getDisplayName())) {
             throw new RuntimeException("Display name is required");
         }
+
+        String gender = normalizeGender(request.getGender());
+        if (!"M".equals(gender) && !"F".equals(gender)) {
+            throw new RuntimeException("Gender must be M or F");
+        }
     }
 
     private void applyRequest(Player player, SavePlayerRequest request) {
@@ -110,6 +115,7 @@ public class PlayerController {
         player.setVenmoId(trimToNull(request.getVenmoId()));
         player.setZelleId(trimToNull(request.getZelleId()));
         player.setHandicapMethod(trimToNull(request.getHandicapMethod()));
+        player.setGender(normalizeGender(request.getGender()));
 
         if (request.getActive() == null) {
             player.setActive(true);
@@ -129,6 +135,7 @@ public class PlayerController {
         response.setHandicapMethod(player.getHandicapMethod());
         response.setEmail(player.getEmail());
         response.setCell(player.getCell());
+        response.setGender(normalizeGender(player.getGender()));
         return response;
     }
 
@@ -145,6 +152,7 @@ public class PlayerController {
         response.setVenmoId(player.getVenmoId());
         response.setZelleId(player.getZelleId());
         response.setHandicapMethod(player.getHandicapMethod());
+        response.setGender(normalizeGender(player.getGender()));
         return response;
     }
 
@@ -159,6 +167,18 @@ public class PlayerController {
         }
 
         return trimmed;
+    }
+
+    private String normalizeGender(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "M";
+        }
+
+        String normalized = value.trim().toUpperCase();
+        if ("F".equals(normalized)) {
+            return "F";
+        }
+        return "M";
     }
 
     private boolean isBlank(String value) {

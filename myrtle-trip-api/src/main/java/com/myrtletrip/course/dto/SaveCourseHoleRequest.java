@@ -6,39 +6,27 @@ public class SaveCourseHoleRequest {
     private Integer par;
     private Integer handicap;
     private Integer yardage;
+    private Integer womenPar;
+    private Integer womenHandicap;
 
     public SaveCourseHoleRequest() {
     }
 
-    public Integer getHoleNumber() {
-        return holeNumber;
-    }
+    public Integer getHoleNumber() { return holeNumber; }
+    public void setHoleNumber(Integer holeNumber) { this.holeNumber = holeNumber; }
 
-    public void setHoleNumber(Integer holeNumber) {
-        this.holeNumber = holeNumber;
-    }
+    public Integer getPar() { return par; }
+    public void setPar(Integer par) { this.par = par; }
 
-    public Integer getPar() {
-        return par;
-    }
+    public Integer getHandicap() { return handicap; }
+    public void setHandicap(Integer handicap) { this.handicap = handicap; }
 
-    public void setPar(Integer par) {
-        this.par = par;
-    }
+    public Integer getYardage() { return yardage; }
+    public void setYardage(Integer yardage) { this.yardage = yardage; }
 
-    public Integer getHandicap() {
-        return handicap;
-    }
+    public Integer getWomenPar() { return womenPar; }
+    public void setWomenPar(Integer womenPar) { this.womenPar = womenPar; }
 
-    public void setHandicap(Integer handicap) {
-        this.handicap = handicap;
-    }
-
-    public Integer getYardage() {
-        return yardage;
-    }
-
-    public void setYardage(Integer yardage) {
-        this.yardage = yardage;
-    }
+    public Integer getWomenHandicap() { return womenHandicap; }
+    public void setWomenHandicap(Integer womenHandicap) { this.womenHandicap = womenHandicap; }
 }

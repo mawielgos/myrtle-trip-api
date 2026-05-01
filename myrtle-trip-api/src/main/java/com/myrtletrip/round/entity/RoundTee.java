@@ -7,10 +7,7 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 
 @Entity
-@Table(
-    name = "round_tee",
-    uniqueConstraints = @UniqueConstraint(name = "uq_round_tee_round_role", columnNames = {"round_id", "tee_role"})
-)
+@Table(name = "round_tee")
 public class RoundTee {
 
     @Id

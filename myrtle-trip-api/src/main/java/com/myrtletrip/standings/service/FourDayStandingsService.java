@@ -1,6 +1,9 @@
 package com.myrtletrip.standings.service;
 
 import com.myrtletrip.player.entity.Player;
+import com.myrtletrip.prize.entity.PrizeSchedule;
+import com.myrtletrip.prize.entity.PrizeSchedulePayout;
+import com.myrtletrip.prize.repository.PrizeScheduleRepository;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.model.RoundFormat;
@@ -31,22 +34,27 @@ import java.util.Map;
 @Service
 public class FourDayStandingsService {
 
+    private static final String FOUR_DAY_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
+
     private final TripRepository tripRepository;
     private final TripPlayerRepository tripPlayerRepository;
     private final TripPlannedRoundRepository tripPlannedRoundRepository;
     private final RoundRepository roundRepository;
     private final ScorecardRepository scorecardRepository;
+    private final PrizeScheduleRepository prizeScheduleRepository;
 
     public FourDayStandingsService(TripRepository tripRepository,
                                    TripPlayerRepository tripPlayerRepository,
                                    TripPlannedRoundRepository tripPlannedRoundRepository,
                                    RoundRepository roundRepository,
-                                   ScorecardRepository scorecardRepository) {
+                                   ScorecardRepository scorecardRepository,
+                                   PrizeScheduleRepository prizeScheduleRepository) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.tripPlannedRoundRepository = tripPlannedRoundRepository;
         this.roundRepository = roundRepository;
         this.scorecardRepository = scorecardRepository;
+        this.prizeScheduleRepository = prizeScheduleRepository;
     }
 
     @Transactional(readOnly = true)
@@ -132,11 +140,9 @@ public class FourDayStandingsService {
         assignPositions(ranked);
 
         if (!includedPlannedRounds.isEmpty() && eligibleRounds.size() == includedPlannedRounds.size()) {
-            applyPayouts(trip, ranked);
+            applyPayouts(tripId, ranked);
         } else {
-            for (PlayerAggregate aggregate : ranked) {
-                aggregate.money = null;
-            }
+            clearPayouts(ranked);
         }
 
         List<FourDayStandingRowResponse> rows = new ArrayList<FourDayStandingRowResponse>();
@@ -229,59 +235,32 @@ public class FourDayStandingsService {
         }
     }
 
-    private void applyPayouts(Trip trip, List<PlayerAggregate> ranked) {
-        if (ranked.isEmpty() || trip.getEntryFee() == null) {
+    private void applyPayouts(Long tripId, List<PlayerAggregate> ranked) {
+        clearPayouts(ranked);
+
+        if (ranked.isEmpty()) {
             return;
         }
 
-        BigDecimal pool = BigDecimal.valueOf((long) ranked.size() * trip.getEntryFee());
-        BigDecimal standingsPool = pool.multiply(new BigDecimal("0.25"));
+        PrizeSchedule schedule = prizeScheduleRepository.findByTrip_IdAndGameKey(tripId, FOUR_DAY_GAME_KEY)
+                .orElse(null);
 
-        List<BigDecimal> baseSchedule = buildBasePayoutSchedule(ranked.size(), standingsPool);
-
-        for (int i = 0; i < ranked.size() && i < baseSchedule.size(); i++) {
-            ranked.get(i).money = baseSchedule.get(i);
+        if (schedule == null || schedule.getPayouts() == null || schedule.getPayouts().isEmpty()) {
+            return;
         }
 
-        applyTieSplits(ranked);
-    }
-
-    private List<BigDecimal> buildBasePayoutSchedule(int playerCount, BigDecimal pool) {
-        List<BigDecimal> payouts = new ArrayList<BigDecimal>();
-        if (playerCount <= 0) {
-            return payouts;
+        Map<Integer, BigDecimal> payoutByPlace = new HashMap<Integer, BigDecimal>();
+        for (PrizeSchedulePayout payout : schedule.getPayouts()) {
+            if (payout.getFinishingPlace() == null || payout.getAmountPerPlayer() == null) {
+                continue;
+            }
+            if (payout.getFinishingPlace() < 1) {
+                continue;
+            }
+            payoutByPlace.put(payout.getFinishingPlace(), payout.getAmountPerPlayer());
         }
 
-        BigDecimal five = new BigDecimal("5.00");
-
-        for (int place = playerCount; place >= 4; place--) {
-            payouts.add(0, five.multiply(BigDecimal.valueOf(playerCount - place + 1L)));
-        }
-
-        BigDecimal subtotal = BigDecimal.ZERO;
-        for (BigDecimal amount : payouts) {
-            subtotal = subtotal.add(amount);
-        }
-
-        BigDecimal remaining = pool.subtract(subtotal);
-        if (remaining.signum() < 0) {
-            remaining = BigDecimal.ZERO;
-        }
-
-        BigDecimal first = remaining.multiply(new BigDecimal("0.50")).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal second = remaining.multiply(new BigDecimal("0.30")).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal third = remaining.subtract(first).subtract(second).setScale(2, RoundingMode.HALF_UP);
-
-        payouts.add(0, third);
-        payouts.add(0, second);
-        payouts.add(0, first);
-
-        return payouts;
-    }
-
-    private void applyTieSplits(List<PlayerAggregate> ranked) {
         int index = 0;
-
         while (index < ranked.size()) {
             int end = index;
             int position = ranked.get(index).position;
@@ -290,21 +269,28 @@ public class FourDayStandingsService {
                 end++;
             }
 
-            if (end > index) {
-                BigDecimal total = BigDecimal.ZERO;
-                for (int i = index; i <= end; i++) {
-                    if (ranked.get(i).money != null) {
-                        total = total.add(ranked.get(i).money);
-                    }
+            BigDecimal tiedPool = BigDecimal.ZERO;
+            for (int place = position; place <= position + (end - index); place++) {
+                BigDecimal placeAmount = payoutByPlace.get(place);
+                if (placeAmount != null) {
+                    tiedPool = tiedPool.add(placeAmount);
                 }
+            }
 
-                BigDecimal split = total.divide(BigDecimal.valueOf(end - index + 1L), 2, RoundingMode.HALF_UP);
+            if (tiedPool.signum() > 0) {
+                BigDecimal split = tiedPool.divide(BigDecimal.valueOf(end - index + 1L), 2, RoundingMode.HALF_UP);
                 for (int i = index; i <= end; i++) {
                     ranked.get(i).money = split;
                 }
             }
 
             index = end + 1;
+        }
+    }
+
+    private void clearPayouts(List<PlayerAggregate> ranked) {
+        for (PlayerAggregate aggregate : ranked) {
+            aggregate.money = null;
         }
     }
 

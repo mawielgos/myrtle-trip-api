@@ -32,12 +32,8 @@ public class Round {
     private Course course;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "standard_round_tee_id")
-    private RoundTee standardRoundTee;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "alternate_round_tee_id")
-    private RoundTee alternateRoundTee;
+    @JoinColumn(name = "default_round_tee_id")
+    private RoundTee defaultRoundTee;
 
     @Column(name = "round_date")
     private LocalDate roundDate;
@@ -52,79 +48,41 @@ public class Round {
     @Column(name = "format", nullable = false, length = 50)
     private RoundFormat format;
 
-    public Long getId() {
-        return id;
-    }
+    public Long getId() { return id; }
 
-    public Trip getTrip() {
-        return trip;
-    }
+    public Trip getTrip() { return trip; }
+    public void setTrip(Trip trip) { this.trip = trip; }
 
-    public void setTrip(Trip trip) {
-        this.trip = trip;
-    }
+    public Integer getRoundNumber() { return roundNumber; }
+    public void setRoundNumber(Integer roundNumber) { this.roundNumber = roundNumber; }
 
-    public Integer getRoundNumber() {
-        return roundNumber;
-    }
+    public Course getCourse() { return course; }
+    public void setCourse(Course course) { this.course = course; }
 
-    public void setRoundNumber(Integer roundNumber) {
-        this.roundNumber = roundNumber;
-    }
+    public RoundTee getDefaultRoundTee() { return defaultRoundTee; }
+    public void setDefaultRoundTee(RoundTee defaultRoundTee) { this.defaultRoundTee = defaultRoundTee; }
 
-    public Course getCourse() {
-        return course;
-    }
+    /** Backward-compatible alias while older services/pages are retired. */
+    public RoundTee getStandardRoundTee() { return defaultRoundTee; }
 
-    public void setCourse(Course course) {
-        this.course = course;
-    }
+    /** Backward-compatible alias while older services/pages are retired. */
+    public void setStandardRoundTee(RoundTee standardRoundTee) { this.defaultRoundTee = standardRoundTee; }
 
-    public RoundTee getStandardRoundTee() {
-        return standardRoundTee;
-    }
+    /** Alternate tee is no longer a round-level concept. Player tee overrides use Scorecard.roundTee. */
+    public RoundTee getAlternateRoundTee() { return null; }
 
-    public void setStandardRoundTee(RoundTee standardRoundTee) {
-        this.standardRoundTee = standardRoundTee;
-    }
+    /** Alternate tee is no longer a round-level concept. Player tee overrides use Scorecard.roundTee. */
+    public void setAlternateRoundTee(RoundTee alternateRoundTee) { }
 
-    public RoundTee getAlternateRoundTee() {
-        return alternateRoundTee;
-    }
+    public LocalDate getRoundDate() { return roundDate; }
+    public void setRoundDate(LocalDate roundDate) { this.roundDate = roundDate; }
 
-    public void setAlternateRoundTee(RoundTee alternateRoundTee) {
-        this.alternateRoundTee = alternateRoundTee;
-    }
+    public Integer getHandicapPercent() { return handicapPercent; }
+    public void setHandicapPercent(Integer handicapPercent) { this.handicapPercent = handicapPercent; }
 
-    public LocalDate getRoundDate() {
-        return roundDate;
-    }
+    public Boolean getFinalized() { return finalized; }
+    public void setFinalized(Boolean finalized) { this.finalized = finalized; }
 
-    public void setRoundDate(LocalDate roundDate) {
-        this.roundDate = roundDate;
-    }
-
-    public Integer getHandicapPercent() {
-        return handicapPercent;
-    }
-
-    public void setHandicapPercent(Integer handicapPercent) {
-        this.handicapPercent = handicapPercent;
-    }
-
-    public Boolean getFinalized() {
-        return finalized;
-    }
-
-    public void setFinalized(Boolean finalized) {
-        this.finalized = finalized;
-    }
-
-    public RoundFormat getFormat() {
-        return format;
-    }
-
-    public void setFormat(RoundFormat format) {
-        this.format = format;
-    }
+    public RoundFormat getFormat() { return format; }
+    public void setFormat(RoundFormat format) { this.format = format; }
 }

@@ -22,6 +22,13 @@ public class TeamScrambleScorer extends AbstractTeamGameScorer {
         for (TeamScoringData team : data.getTeams()) {
             TeamGameResult teamResult = findTeamResult(result, team.getTeamId());
 
+            if (team.getScrambleTotalScore() != null) {
+                teamResult.setTotalGross(team.getScrambleTotalScore());
+                teamResult.setTotalNet(team.getScrambleTotalScore());
+                teamResult.setTotalPoints(0);
+                continue;
+            }
+
             for (int holeNumber = 1; holeNumber <= 18; holeNumber++) {
                 var hole = requireTeamHole(team, holeNumber);
 
