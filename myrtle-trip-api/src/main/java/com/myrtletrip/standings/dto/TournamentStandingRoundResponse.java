@@ -1,6 +1,6 @@
 package com.myrtletrip.standings.dto;
 
-public class FourDayStandingRoundResponse {
+public class TournamentStandingRoundResponse {
 
     private Long roundId;
     private Integer roundNumber;

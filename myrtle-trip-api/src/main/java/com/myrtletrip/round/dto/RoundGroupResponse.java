@@ -1,5 +1,6 @@
 package com.myrtletrip.round.dto;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -7,6 +8,7 @@ public class RoundGroupResponse {
 
     private Long groupId;
     private Integer groupNumber;
+    private LocalTime teeTime;
     private List<RoundGroupPlayerResponse> players = new ArrayList<>();
 
     public Long getGroupId() {
@@ -23,6 +25,14 @@ public class RoundGroupResponse {
 
     public void setGroupNumber(Integer groupNumber) {
         this.groupNumber = groupNumber;
+    }
+
+    public LocalTime getTeeTime() {
+        return teeTime;
+    }
+
+    public void setTeeTime(LocalTime teeTime) {
+        this.teeTime = teeTime;
     }
 
     public List<RoundGroupPlayerResponse> getPlayers() {

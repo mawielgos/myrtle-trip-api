@@ -13,6 +13,8 @@ public interface CourseTeeComboHoleRepository extends JpaRepository<CourseTeeCom
 
     Optional<CourseTeeComboHole> findByComboTee_IdAndHoleNumber(Long comboTeeId, Integer holeNumber);
 
+    long countByComboTee_Id(Long comboTeeId);
+
     @Transactional
     void deleteByComboTee_Id(Long comboTeeId);
 }

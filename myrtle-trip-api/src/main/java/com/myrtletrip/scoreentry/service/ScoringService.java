@@ -14,6 +14,7 @@ import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scorehistory.service.RoundScoreHistorySyncService;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,17 +30,20 @@ public class ScoringService {
     private final RoundTeeHoleRepository roundTeeHoleRepository;
     private final RoundScoreHistorySyncService roundScoreHistorySyncService;
     private final RoundTeeResolver roundTeeResolver;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public ScoringService(HoleScoreRepository holeRepo,
                           ScorecardRepository scorecardRepo,
                           RoundTeeHoleRepository roundTeeHoleRepository,
                           RoundScoreHistorySyncService roundScoreHistorySyncService,
-                          RoundTeeResolver roundTeeResolver) {
+                          RoundTeeResolver roundTeeResolver,
+                          TripEditingGuardService tripEditingGuardService) {
         this.holeRepo = holeRepo;
         this.scorecardRepo = scorecardRepo;
         this.roundTeeHoleRepository = roundTeeHoleRepository;
         this.roundScoreHistorySyncService = roundScoreHistorySyncService;
         this.roundTeeResolver = roundTeeResolver;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
@@ -54,6 +58,7 @@ public class ScoringService {
 
         Scorecard scorecard = scorecardRepo.findById(scorecardId)
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
+        tripEditingGuardService.assertCorrectionAllowedForRound(scorecard.getRound());
 
         HoleScore hole = holeRepo.findByScorecard_IdAndHoleNumber(scorecardId, holeNumber)
                 .orElseGet(() -> {
@@ -71,9 +76,9 @@ public class ScoringService {
 
     @Transactional
     public void recalculate(Long scorecardId) {
-        if (!scorecardRepo.existsById(scorecardId)) {
-            throw new IllegalArgumentException("Scorecard not found");
-        }
+        Scorecard scorecard = scorecardRepo.findById(scorecardId)
+                .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
+        tripEditingGuardService.assertCorrectionAllowedForRound(scorecard.getRound());
 
         recalculateScorecard(scorecardId);
     }

@@ -12,8 +12,9 @@ import java.util.List;
 @Service
 public class FrozenMyrtleBeachImportService {
 
-    private static final String HANDICAP_METHOD_MYRTLE_BEACH = "MYRTLE_BEACH";
-    private static final String SOURCE_MYRTLE_FROZEN = "MYRTLE_FROZEN";
+    private static final String HANDICAP_METHOD_DB_SCORE_HISTORY = "DB_SCORE_HISTORY";
+    private static final String HANDICAP_METHOD_LEGACY_MYRTLE_BEACH = "MYRTLE_BEACH";
+    private static final String SOURCE_DB_HISTORY_FROZEN = "DB_HISTORY_FROZEN";
 
     private final PlayerRepository playerRepository;
     private final ScoreHistoryEntryRepository scoreHistoryEntryRepository;
@@ -26,7 +27,9 @@ public class FrozenMyrtleBeachImportService {
 
     @Transactional
     public void initializeFrozenMyrtleBeachForGroup(String handicapGroupCode) {
-        List<Player> players = playerRepository.findByHandicapMethodIgnoreCase(HANDICAP_METHOD_MYRTLE_BEACH);
+        List<Player> players = new java.util.ArrayList<>();
+        players.addAll(playerRepository.findByHandicapMethodIgnoreCase(HANDICAP_METHOD_DB_SCORE_HISTORY));
+        players.addAll(playerRepository.findByHandicapMethodIgnoreCase(HANDICAP_METHOD_LEGACY_MYRTLE_BEACH));
 
         for (Player player : players) {
             initializeFrozenMyrtleBeachForPlayer(player, handicapGroupCode);
@@ -46,13 +49,13 @@ public class FrozenMyrtleBeachImportService {
         scoreHistoryEntryRepository.deleteByPlayerAndHandicapGroupCodeAndSourceType(
                 player,
                 handicapGroupCode,
-                SOURCE_MYRTLE_FROZEN
+                SOURCE_DB_HISTORY_FROZEN
         );
 
         List<ScoreHistoryEntry> baselineEntries = scoreHistoryEntryRepository
                 .findTop6ByPlayerAndDifferentialIsNotNullAndManualDifferentialRequiredFalseAndSourceTypeNotInOrderByScoreDateDescIdDesc(
                         player,
-                        List.of("GHIN_FROZEN", "MYRTLE_FROZEN")
+                        List.of("GHIN_FROZEN", "DB_HISTORY_FROZEN")
                 );
 
         int postingOrder = 1;
@@ -68,7 +71,7 @@ public class FrozenMyrtleBeachImportService {
             frozen.setGrossScore(source.getGrossScore());
             frozen.setAdjustedGrossScore(source.getAdjustedGrossScore());
             frozen.setDifferential(source.getDifferential());
-            frozen.setSourceType(SOURCE_MYRTLE_FROZEN);
+            frozen.setSourceType(SOURCE_DB_HISTORY_FROZEN);
             frozen.setIncludedInMyrtleCalc(true);
             frozen.setHandicapGroupCode(handicapGroupCode);
             frozen.setPostingOrder(postingOrder++);

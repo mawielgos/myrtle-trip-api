@@ -48,6 +48,12 @@ public class Round {
     @Column(name = "format", nullable = false, length = 50)
     private RoundFormat format;
 
+    @Column(name = "scramble_team_size")
+    private Integer scrambleTeamSize = 4;
+
+    @Column(name = "scramble_seeding_method", length = 40)
+    private String scrambleSeedingMethod = "CURRENT_HANDICAP_INDEX";
+
     public Long getId() { return id; }
 
     public Trip getTrip() { return trip; }
@@ -85,4 +91,10 @@ public class Round {
 
     public RoundFormat getFormat() { return format; }
     public void setFormat(RoundFormat format) { this.format = format; }
+
+    public Integer getScrambleTeamSize() { return scrambleTeamSize; }
+    public void setScrambleTeamSize(Integer scrambleTeamSize) { this.scrambleTeamSize = scrambleTeamSize; }
+
+    public String getScrambleSeedingMethod() { return scrambleSeedingMethod; }
+    public void setScrambleSeedingMethod(String scrambleSeedingMethod) { this.scrambleSeedingMethod = scrambleSeedingMethod; }
 }

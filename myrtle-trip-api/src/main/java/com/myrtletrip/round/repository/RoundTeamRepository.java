@@ -12,4 +12,7 @@ public interface RoundTeamRepository extends JpaRepository<RoundTeam, Long> {
     void deleteByRound_Id(Long roundId);
     
     long countByRoundId(Long roundId);
+    long countByRound_Trip_IdAndScrambleTotalScoreIsNotNull(Long tripId);
+
+    void deleteByRound_Trip_Id(Long tripId);
 }

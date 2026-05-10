@@ -52,8 +52,4 @@ public class ScoreEntryController {
             @Max(value = 15, message = "Strokes must be <= 15")
             int strokes
     ) {}
-
-    public record AlternateTeeRequest(
-            boolean useAlternateTee
-    ) {}
 }

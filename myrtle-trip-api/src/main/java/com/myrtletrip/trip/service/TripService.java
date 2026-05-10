@@ -4,6 +4,8 @@ import com.myrtletrip.course.entity.Course;
 import com.myrtletrip.course.entity.CourseTee;
 import com.myrtletrip.course.repository.CourseRepository;
 import com.myrtletrip.course.repository.CourseTeeRepository;
+import com.myrtletrip.course.repository.CourseHoleRepository;
+import com.myrtletrip.course.repository.CourseTeeComboHoleRepository;
 import com.myrtletrip.handicap.service.TripHandicapService;
 import com.myrtletrip.handicap.source.frozen.FrozenGhinImportService;
 import com.myrtletrip.player.entity.Player;
@@ -34,15 +36,19 @@ import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripPlannedRound;
 import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.trip.entity.TripStatus;
+import com.myrtletrip.trip.model.TripHandicapMethod;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
 import com.myrtletrip.trip.repository.TripPlayerRepository;
 import com.myrtletrip.trip.repository.TripRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -53,8 +59,11 @@ import java.util.Set;
 public class TripService {
 
     private static final String GHIN_FROZEN = "GHIN_FROZEN";
+    private static final String DB_HISTORY_FROZEN = "DB_HISTORY_FROZEN";
+    private static final String TRIP_ROUND = "TRIP_ROUND";
     private static final int DEFAULT_PLANNED_ROUND_COUNT = 5;
     private static final int MIN_PLANNED_ROUND_COUNT = 1;
+    private static final TripHandicapMethod DEFAULT_HANDICAP_METHOD = TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY;
 
     private final TripRepository tripRepository;
     private final TripPlayerRepository tripPlayerRepository;
@@ -67,6 +76,8 @@ public class TripService {
     private final TripPlannedRoundRepository tripPlannedRoundRepository;
     private final CourseRepository courseRepository;
     private final CourseTeeRepository courseTeeRepository;
+    private final CourseHoleRepository courseHoleRepository;
+    private final CourseTeeComboHoleRepository courseTeeComboHoleRepository;
     private final TripHandicapService tripHandicapService;
     private final ScoreHistoryEntryRepository scoreHistoryEntryRepository;
     private final FrozenGhinImportService frozenGhinImportService;
@@ -82,6 +93,8 @@ public class TripService {
                        TripPlannedRoundRepository tripPlannedRoundRepository,
                        CourseRepository courseRepository,
                        CourseTeeRepository courseTeeRepository,
+                       CourseHoleRepository courseHoleRepository,
+                       CourseTeeComboHoleRepository courseTeeComboHoleRepository,
                        TripHandicapService tripHandicapService,
                        ScoreHistoryEntryRepository scoreHistoryEntryRepository,
                        FrozenGhinImportService frozenGhinImportService) {
@@ -96,6 +109,8 @@ public class TripService {
         this.tripPlannedRoundRepository = tripPlannedRoundRepository;
         this.courseRepository = courseRepository;
         this.courseTeeRepository = courseTeeRepository;
+        this.courseHoleRepository = courseHoleRepository;
+        this.courseTeeComboHoleRepository = courseTeeComboHoleRepository;
         this.tripHandicapService = tripHandicapService;
         this.scoreHistoryEntryRepository = scoreHistoryEntryRepository;
         this.frozenGhinImportService = frozenGhinImportService;
@@ -146,10 +161,19 @@ public class TripService {
             }
         }
 
+        TripHandicapMethod resolvedHandicapMethod = resolveTripHandicapMethod(request.getHandicapMethod());
+        validateTripHandicapPolicy(request, resolvedHandicapMethod);
+        validateTripDatesAndRoundCount(request);
+
         trip.setTripCode(request.getTripCode());
         trip.setName(request.getName());
         trip.setTripYear(request.getTripYear());
         trip.setEntryFee(request.getEntryFee());
+        trip.setTripStartDate(request.getTripStartDate());
+        trip.setTripEndDate(request.getTripEndDate());
+        trip.setPlannedRoundCount(resolvePlannedRoundCount(request.getPlannedRoundCount()));
+        trip.setHandicapsEnabled(request.getHandicapsEnabled() == null ? Boolean.TRUE : request.getHandicapsEnabled());
+        trip.setHandicapMethod(resolvedHandicapMethod);
 
         if (isNewTrip && trip.getInitialized() == null) {
             trip.setInitialized(false);
@@ -167,6 +191,14 @@ public class TripService {
 
         trip = tripRepository.saveAndFlush(trip);
 
+        Map<Long, BigDecimal> existingFrozenIndexes = new HashMap<Long, BigDecimal>();
+        List<TripPlayer> existingTripPlayers = tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip);
+        for (TripPlayer existingTripPlayer : existingTripPlayers) {
+            if (existingTripPlayer != null && existingTripPlayer.getPlayer() != null) {
+                existingFrozenIndexes.put(existingTripPlayer.getPlayer().getId(), existingTripPlayer.getFrozenHandicapIndex());
+            }
+        }
+
         tripPlayerRepository.deleteByTrip(trip);
         tripPlayerRepository.flush();
 
@@ -176,10 +208,15 @@ public class TripService {
             Player player = playerRepository.findById(playerId)
                     .orElseThrow(() -> new IllegalArgumentException("Player not found: " + playerId));
 
+            if (!player.isActive()) {
+                throw new IllegalArgumentException("Only active players can be added to a trip roster: " + player.getDisplayName());
+            }
+
             TripPlayer tripPlayer = new TripPlayer();
             tripPlayer.setTrip(trip);
             tripPlayer.setPlayer(player);
             tripPlayer.setDisplayOrder(displayOrder);
+            tripPlayer.setFrozenHandicapIndex(resolveFrozenHandicapIndex(request, resolvedHandicapMethod, playerId, existingFrozenIndexes));
             tripPlayerRepository.save(tripPlayer);
 
             displayOrder++;
@@ -189,14 +226,17 @@ public class TripService {
 
         if (isNewTrip) {
             createDefaultPlannedRounds(trip);
+        } else {
+            syncPlannedRoundsToTripRoundCount(trip);
+            validateExistingPlannedRoundsWithinTripDates(trip);
         }
 
         return trip;
     }
 
     @Transactional(readOnly = true)
-    public List<TripListResponse> getTrips() {
-        List<Trip> trips = tripRepository.findAll();
+    public List<TripListResponse> getTrips(boolean includeArchived) {
+        List<Trip> trips = includeArchived ? tripRepository.findAll() : tripRepository.findByArchivedFalseOrArchivedIsNull();
         List<TripListResponse> responses = new ArrayList<TripListResponse>();
 
         for (Trip trip : trips) {
@@ -206,12 +246,17 @@ public class TripService {
             response.setTripCode(trip.getTripCode());
             response.setTripYear(trip.getTripYear());
             response.setStatus(trip.getStatus() != null ? trip.getStatus().name() : null);
+            response.setCorrectionMode(Boolean.TRUE.equals(trip.getCorrectionMode()));
+            response.setArchived(Boolean.TRUE.equals(trip.getArchived()));
 
             long playerCount = tripPlayerRepository.countByTrip(trip);
             long roundCount = roundRepository.countByTrip_Id(trip.getId());
             response.setPlayerCount(playerCount);
             response.setRoundCount(roundCount);
+            response.setPlannedRoundCount(resolvePlannedRoundCount(trip.getPlannedRoundCount()));
             response.setCanDelete(roundCount == 0L);
+            response.setCanArchive(!Boolean.TRUE.equals(trip.getArchived()));
+            response.setCanRestore(Boolean.TRUE.equals(trip.getArchived()));
 
             TripDateRange tripDateRange = resolveTripDateRange(trip);
             response.setStartDate(tripDateRange.getStartDate());
@@ -234,8 +279,16 @@ public class TripService {
         response.setTripCode(trip.getTripCode());
         response.setTripYear(trip.getTripYear());
         response.setEntryFee(trip.getEntryFee());
+        response.setTripStartDate(trip.getTripStartDate());
+        response.setTripEndDate(trip.getTripEndDate());
+        response.setPlannedRoundCount(resolvePlannedRoundCount(trip.getPlannedRoundCount()));
+        response.setHandicapsEnabled(trip.getHandicapsEnabled() == null ? Boolean.TRUE : trip.getHandicapsEnabled());
+        response.setHandicapMethod(trip.getHandicapMethod() != null ? trip.getHandicapMethod().name() : DEFAULT_HANDICAP_METHOD.name());
         response.setInitialized(trip.getInitialized());
         response.setStatus(trip.getStatus() != null ? trip.getStatus().name() : null);
+        response.setCorrectionMode(Boolean.TRUE.equals(trip.getCorrectionMode()));
+        response.setArchived(Boolean.TRUE.equals(trip.getArchived()));
+        response.setHasFemalePlayers(hasFemalePlayers(trip));
 
         TripReadinessResponse readiness = buildTripReadiness(trip);
         response.setUnresolvedGhinFixCount(readiness.getUnresolvedGhinFixCount());
@@ -246,7 +299,7 @@ public class TripService {
         return response;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<TripPlayerResponse> getTripPlayers(Long tripId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
@@ -260,23 +313,60 @@ public class TripService {
             TripPlayerResponse response = new TripPlayerResponse();
             response.setPlayerId(player.getId());
             response.setDisplayName(player.getDisplayName());
+            response.setGhinNumber(player.getGhinNumber());
             response.setActive(player.isActive());
+            response.setFrozenHandicapIndex(tripPlayer.getFrozenHandicapIndex());
+            response.setGhinHistoryCount(countUsableGhinHistoryRows(player, trip.getTripCode()));
+            response.setDbScoreHistoryCount(countUsableDbScoreHistoryRows(player));
+            response.setTripScoreCount(countUsableTripScoreRows(player));
 
             BigDecimal handicapIndex = null;
 
             try {
-                if (trip.getTripCode() != null && !trip.getTripCode().isBlank()) {
-                    handicapIndex = tripHandicapService.calculateTripIndex(player, trip.getTripCode());
+                if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
+                    handicapIndex = tripPlayer.getFrozenHandicapIndex();
+                } else if (trip.getTripCode() != null && !trip.getTripCode().isBlank()) {
+                    handicapIndex = tripHandicapService.calculateTripIndex(player, trip.getTripCode(), resolveEffectiveHandicapMethod(trip));
                 }
             } catch (Exception ex) {
                 handicapIndex = null;
             }
 
             response.setHandicapIndex(handicapIndex);
+            response.setUsableHandicapIndex(handicapIndex != null);
             responses.add(response);
         }
 
         return responses;
+    }
+
+
+    @Transactional
+    public void archiveTrip(Long tripId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
+
+        if (Boolean.TRUE.equals(trip.getArchived())) {
+            return;
+        }
+
+        trip.setArchived(Boolean.TRUE);
+        trip.setArchivedAt(LocalDateTime.now());
+        tripRepository.save(trip);
+    }
+
+    @Transactional
+    public void restoreTrip(Long tripId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
+
+        if (!Boolean.TRUE.equals(trip.getArchived())) {
+            return;
+        }
+
+        trip.setArchived(Boolean.FALSE);
+        trip.setArchivedAt(null);
+        tripRepository.save(trip);
     }
 
     @Transactional
@@ -372,7 +462,7 @@ public class TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
 
-        List<TripPlannedRound> rounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+        List<TripPlannedRound> rounds = loadActivePlannedRounds(trip);
         List<TripPlannedRoundResponse> responses = new ArrayList<TripPlannedRoundResponse>();
 
         for (TripPlannedRound round : rounds) {
@@ -393,24 +483,28 @@ public class TripService {
             throw new IllegalArgumentException("Planned rounds are required.");
         }
 
-        validatePlannedRounds(request.getRounds());
+        validatePlannedRounds(request.getRounds(), trip);
+
+        List<TripPlannedRoundRequest> sequencedRequests = sortPlannedRoundRequestsByPlaySequence(request.getRounds());
 
         tripPlannedRoundRepository.deleteByTrip(trip);
         tripPlannedRoundRepository.flush();
 
         List<TripPlannedRound> roundsToSave = new ArrayList<TripPlannedRound>();
 
-        for (TripPlannedRoundRequest roundRequest : request.getRounds()) {
+        for (int index = 0; index < sequencedRequests.size(); index++) {
+            TripPlannedRoundRequest roundRequest = sequencedRequests.get(index);
             TripPlannedRound plannedRound = new TripPlannedRound();
             plannedRound.setTrip(trip);
-            plannedRound.setRoundNumber(roundRequest.getRoundNumber());
+            plannedRound.setRoundNumber(index + 1);
             plannedRound.setRoundDate(roundRequest.getRoundDate());
             plannedRound.setCourseId(roundRequest.getCourseId());
-            plannedRound.setStandardTeeId(roundRequest.getStandardTeeId());
-            plannedRound.setAlternateTeeId(roundRequest.getAlternateTeeId());
-            plannedRound.setFormat(parseRoundFormat(roundRequest.getFormat()));
+            plannedRound.setStandardTeeId(roundRequest.getDefaultTeeId());
+            plannedRound.setWomenDefaultTeeId(roundRequest.getWomenDefaultTeeId());
+            RoundFormat parsedFormat = parseRoundFormat(roundRequest.getFormat());
+            plannedRound.setFormat(parsedFormat);
+            plannedRound.setScrambleTeamSize(resolveScrambleTeamSize(parsedFormat, roundRequest.getScrambleTeamSize()));
             plannedRound.setIncludeInFourDayStandings(Boolean.TRUE.equals(roundRequest.getIncludeInFourDayStandings()));
-            plannedRound.setIncludeInScrambleSeeding(Boolean.TRUE.equals(roundRequest.getIncludeInScrambleSeeding()));
 
             roundsToSave.add(plannedRound);
         }
@@ -438,10 +532,8 @@ public class TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
 
-        Round currentRound = findCurrentRoundEntity(tripId);
-
-        if (currentRound == null) {
-            trip.setStatus(TripStatus.COMPLETE);
+        if (TripStatus.COMPLETE.equals(trip.getStatus())) {
+            // Explicit trip completion is sticky. Corrections should not reopen the trip automatically.
         } else if (Boolean.TRUE.equals(trip.getInitialized())) {
             trip.setStatus(TripStatus.IN_PROGRESS);
         }
@@ -542,8 +634,8 @@ public class TripService {
         	    round.getRoundDate() != null ? round.getRoundDate().toString() : null
         	);
         response.setFormat(round.getFormat() != null ? round.getFormat().name() : null);
+        response.setScrambleTeamSize(resolveScrambleTeamSize(round.getFormat(), round.getScrambleTeamSize()));
 //        response.setIncludeInFourDayStandings(Boolean.TRUE.equals(round.getIncludeInFourDayStandings()));
-//        response.setIncludeInScrambleSeeding(Boolean.TRUE.equals(round.getIncludeInScrambleSeeding()));
         response.setCourseName(round.getCourse() != null ? round.getCourse().getName() : null);
         response.setTeeName(
                 round.getStandardRoundTee() != null ? round.getStandardRoundTee().getTeeName() : null
@@ -553,10 +645,14 @@ public class TripService {
     }
     
     private TripDateRange resolveTripDateRange(Trip trip) {
-        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+        LocalDate startDate = trip.getTripStartDate();
+        LocalDate endDate = trip.getTripEndDate();
 
-        LocalDate startDate = null;
-        LocalDate endDate = null;
+        if (startDate != null || endDate != null) {
+            return new TripDateRange(startDate, endDate);
+        }
+
+        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
 
         for (TripPlannedRound plannedRound : plannedRounds) {
             if (plannedRound == null || plannedRound.getRoundDate() == null) {
@@ -611,9 +707,43 @@ public class TripService {
     }
 
 
+    private long countUsableGhinHistoryRows(Player player, String tripCode) {
+        if (player == null || tripCode == null || tripCode.isBlank()) {
+            return 0L;
+        }
+        return scoreHistoryEntryRepository
+                .countByPlayerAndHandicapGroupCodeAndSourceTypeAndDifferentialIsNotNullAndManualDifferentialRequiredFalse(
+                        player,
+                        tripCode,
+                        GHIN_FROZEN
+                );
+    }
+
+    private long countUsableDbScoreHistoryRows(Player player) {
+        if (player == null) {
+            return 0L;
+        }
+        return scoreHistoryEntryRepository
+                .countByPlayerAndSourceTypeAndDifferentialIsNotNullAndManualDifferentialRequiredFalse(
+                        player,
+                        DB_HISTORY_FROZEN
+                );
+    }
+
+    private long countUsableTripScoreRows(Player player) {
+        if (player == null) {
+            return 0L;
+        }
+        return scoreHistoryEntryRepository
+                .countByPlayerAndSourceTypeAndDifferentialIsNotNullAndManualDifferentialRequiredFalse(
+                        player,
+                        TRIP_ROUND
+                );
+    }
+
     private TripReadinessResponse buildTripReadiness(Trip trip) {
         List<TripPlayer> tripPlayers = tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip);
-        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+        List<TripPlannedRound> plannedRounds = loadActivePlannedRounds(trip);
 
         int activePlayerCount = 0;
         for (TripPlayer tripPlayer : tripPlayers) {
@@ -631,8 +761,12 @@ public class TripService {
             }
         }
 
+        boolean handicapsEnabled = trip.getHandicapsEnabled() == null || Boolean.TRUE.equals(trip.getHandicapsEnabled());
+
         long unresolvedGhinFixCount = 0L;
-        if (trip.getTripCode() != null && !trip.getTripCode().isBlank()) {
+        if (handicapsEnabled
+                && !TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())
+                && trip.getTripCode() != null && !trip.getTripCode().isBlank()) {
             unresolvedGhinFixCount =
                     scoreHistoryEntryRepository
                             .countByHandicapGroupCodeAndSourceTypeAndManualDifferentialRequiredTrue(
@@ -641,23 +775,40 @@ public class TripService {
                             );
         }
 
-        boolean hasFourDayIncludedRound = false;
-        boolean hasScrambleSeedingIncludedRound = false;
-        for (TripPlannedRound plannedRound : plannedRounds) {
-            if (Boolean.TRUE.equals(plannedRound.getIncludeInFourDayStandings())) {
-                hasFourDayIncludedRound = true;
-            }
-            if (Boolean.TRUE.equals(plannedRound.getIncludeInScrambleSeeding())) {
-                hasScrambleSeedingIncludedRound = true;
+        boolean handicapIndexesReady = true;
+        if (handicapsEnabled) {
+            for (TripPlayer tripPlayer : tripPlayers) {
+                if (tripPlayer == null
+                        || tripPlayer.getPlayer() == null
+                        || !tripPlayer.getPlayer().isActive()) {
+                    continue;
+                }
+
+                if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
+                    if (tripPlayer.getFrozenHandicapIndex() == null) {
+                        handicapIndexesReady = false;
+                    }
+                } else {
+                    try {
+                        BigDecimal calculatedIndex = tripHandicapService.calculateTripIndex(
+                                tripPlayer.getPlayer(),
+                                trip.getTripCode(),
+                                resolveEffectiveHandicapMethod(trip)
+                        );
+                        if (calculatedIndex == null) {
+                            handicapIndexesReady = false;
+                        }
+                    } catch (Exception ex) {
+                        handicapIndexesReady = false;
+                    }
+                }
             }
         }
 
         boolean rosterReady = activePlayerCount > 0;
         boolean plannedRoundsReady =
                 plannedRounds.size() >= MIN_PLANNED_ROUND_COUNT
-                        && completedPlannedRoundCount == plannedRounds.size()
-                        && hasFourDayIncludedRound
-                        && hasScrambleSeedingIncludedRound;
+                        && completedPlannedRoundCount == plannedRounds.size();
         boolean ghinFixesReady = unresolvedGhinFixCount == 0L;
 
         boolean alreadyStarted =
@@ -669,7 +820,8 @@ public class TripService {
                 !alreadyStarted
                         && rosterReady
                         && plannedRoundsReady
-                        && ghinFixesReady;
+                        && ghinFixesReady
+                        && handicapIndexesReady;
 
         List<String> blockingItems = new ArrayList<String>();
 
@@ -687,12 +839,12 @@ public class TripService {
             blockingItems.add("All planned rounds must have a date, format, course, and standard tee. Alternate tee is optional but must differ from the standard tee.");
         }
 
-        if (!hasFourDayIncludedRound) {
-            blockingItems.add("Select at least one planned round to include in the 4-day tournament standings.");
-        }
-
-        if (!hasScrambleSeedingIncludedRound) {
-            blockingItems.add("Select at least one planned round to include in scramble seeding.");
+        if (!handicapIndexesReady) {
+            if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
+                blockingItems.add("Enter a frozen GHIN handicap index for every active player before starting the trip, or mark the trip as Scratch / no handicaps.");
+            } else {
+                blockingItems.add("Every active player must have a calculable handicap index before starting the trip, or mark the trip as Scratch / no handicaps.");
+            }
         }
 
         if (!ghinFixesReady) {
@@ -707,6 +859,7 @@ public class TripService {
         response.setRosterReady(rosterReady);
         response.setPlannedRoundsReady(plannedRoundsReady);
         response.setGhinFixesReady(ghinFixesReady);
+        response.setHandicapIndexesReady(handicapIndexesReady);
         response.setCanStartTrip(canStartTrip);
         response.setBlockingItems(blockingItems);
 
@@ -728,12 +881,129 @@ public class TripService {
         if (plannedRound.getStandardTeeId() == null) {
             return false;
         }
-        if (plannedRound.getAlternateTeeId() != null
-                && plannedRound.getAlternateTeeId().equals(plannedRound.getStandardTeeId())) {
+        return true;
+    }
+
+    private boolean hasFemalePlayers(Trip trip) {
+        if (trip == null) {
             return false;
         }
+        List<TripPlayer> tripPlayers = tripPlayerRepository.findByTrip(trip);
+        for (TripPlayer tripPlayer : tripPlayers) {
+            if (tripPlayer != null
+                    && tripPlayer.getPlayer() != null
+                    && "F".equalsIgnoreCase(tripPlayer.getPlayer().getGender())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-        return true;
+    private int resolvePlannedRoundCount(Integer plannedRoundCount) {
+        if (plannedRoundCount == null) {
+            return DEFAULT_PLANNED_ROUND_COUNT;
+        }
+        return plannedRoundCount;
+    }
+
+    private void validateTripDatesAndRoundCount(TripSetupRequest request) {
+        int plannedRoundCount = resolvePlannedRoundCount(request.getPlannedRoundCount());
+        if (plannedRoundCount < 1 || plannedRoundCount > 12) {
+            throw new IllegalArgumentException("Planned round count must be between 1 and 12.");
+        }
+
+        if (request.getTripStartDate() == null) {
+            throw new IllegalArgumentException("Trip start date is required.");
+        }
+        if (request.getTripEndDate() == null) {
+            throw new IllegalArgumentException("Trip end date is required.");
+        }
+        if (request.getTripEndDate().isBefore(request.getTripStartDate())) {
+            throw new IllegalArgumentException("Trip end date cannot be before trip start date.");
+        }
+    }
+
+    private void validateExistingPlannedRoundsWithinTripDates(Trip trip) {
+        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+        for (TripPlannedRound plannedRound : plannedRounds) {
+            if (plannedRound == null) {
+                continue;
+            }
+            validateRoundDateWithinTripDates(trip, plannedRound.getRoundDate(), plannedRound.getRoundNumber());
+        }
+    }
+
+    private void validateRoundDateWithinTripDates(Trip trip, LocalDate roundDate, Integer roundNumber) {
+        if (roundDate == null || trip == null) {
+            return;
+        }
+
+        LocalDate tripStartDate = trip.getTripStartDate();
+        LocalDate tripEndDate = trip.getTripEndDate();
+
+        if (tripStartDate != null && roundDate.isBefore(tripStartDate)) {
+            throw new IllegalArgumentException("Round " + roundNumber + " date must be on or after the trip start date.");
+        }
+        if (tripEndDate != null && roundDate.isAfter(tripEndDate)) {
+            throw new IllegalArgumentException("Round " + roundNumber + " date must be on or before the trip end date.");
+        }
+    }
+
+
+    private List<TripPlannedRound> loadActivePlannedRounds(Trip trip) {
+        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+        List<TripPlannedRound> active = new ArrayList<TripPlannedRound>();
+        int plannedRoundCount = resolvePlannedRoundCount(trip != null ? trip.getPlannedRoundCount() : null);
+
+        for (TripPlannedRound plannedRound : plannedRounds) {
+            if (plannedRound == null || plannedRound.getRoundNumber() == null) {
+                continue;
+            }
+            if (plannedRound.getRoundNumber() < 1 || plannedRound.getRoundNumber() > plannedRoundCount) {
+                continue;
+            }
+            active.add(plannedRound);
+        }
+
+        return active;
+    }
+
+    private void syncPlannedRoundsToTripRoundCount(Trip trip) {
+        int targetCount = resolvePlannedRoundCount(trip.getPlannedRoundCount());
+        List<TripPlannedRound> existingRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+
+        if (existingRounds.size() == targetCount) {
+            return;
+        }
+
+        if (existingRounds.size() > targetCount) {
+            for (int i = targetCount; i < existingRounds.size(); i++) {
+                TripPlannedRound plannedRound = existingRounds.get(i);
+                if (plannedRound.getRoundDate() != null
+                        || plannedRound.getCourseId() != null
+                        || plannedRound.getStandardTeeId() != null
+                        || plannedRound.getFormat() != null
+                        || Boolean.TRUE.equals(plannedRound.getIncludeInFourDayStandings())) {
+                    throw new IllegalArgumentException("Cannot reduce planned round count because Round " + plannedRound.getRoundNumber() + " already has setup details. Clear that round first.");
+                }
+            }
+
+            for (int i = existingRounds.size() - 1; i >= targetCount; i--) {
+                tripPlannedRoundRepository.delete(existingRounds.get(i));
+            }
+            tripPlannedRoundRepository.flush();
+            return;
+        }
+
+        for (int roundNumber = existingRounds.size() + 1; roundNumber <= targetCount; roundNumber++) {
+            TripPlannedRound plannedRound = new TripPlannedRound();
+            plannedRound.setTrip(trip);
+            plannedRound.setRoundNumber(roundNumber);
+            plannedRound.setFormat(defaultFormatForRound(roundNumber));
+            plannedRound.setIncludeInFourDayStandings(false);
+            tripPlannedRoundRepository.save(plannedRound);
+        }
+        tripPlannedRoundRepository.flush();
     }
 
     private void createDefaultPlannedRounds(Trip trip) {
@@ -741,15 +1011,90 @@ public class TripService {
             return;
         }
 
-        for (int i = 1; i <= DEFAULT_PLANNED_ROUND_COUNT; i++) {
+        int plannedRoundCount = resolvePlannedRoundCount(trip.getPlannedRoundCount());
+
+        for (int i = 1; i <= plannedRoundCount; i++) {
             TripPlannedRound plannedRound = new TripPlannedRound();
             plannedRound.setTrip(trip);
             plannedRound.setRoundNumber(i);
             plannedRound.setFormat(defaultFormatForRound(i));
             plannedRound.setIncludeInFourDayStandings(defaultIncludeInFourDayStandings(i));
-            plannedRound.setIncludeInScrambleSeeding(defaultIncludeInScrambleSeeding(i));
             tripPlannedRoundRepository.save(plannedRound);
         }
+    }
+
+    private TripHandicapMethod resolveTripHandicapMethod(String rawMethod) {
+        if (rawMethod == null || rawMethod.isBlank()) {
+            return DEFAULT_HANDICAP_METHOD;
+        }
+
+        String normalized = rawMethod.trim().toUpperCase();
+
+        if ("GHIN".equals(normalized)) {
+            return TripHandicapMethod.GHIN_HISTORY;
+        }
+
+        if ("DB_SCORE_HISTORY".equals(normalized) || "MYRTLE_BEACH".equals(normalized)) {
+            return TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY;
+        }
+
+        try {
+            return TripHandicapMethod.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Unsupported trip handicap method: " + rawMethod);
+        }
+    }
+
+    private TripHandicapMethod resolveEffectiveHandicapMethod(Trip trip) {
+        if (trip == null || trip.getHandicapMethod() == null) {
+            return DEFAULT_HANDICAP_METHOD;
+        }
+        return trip.getHandicapMethod();
+    }
+
+    private void validateTripHandicapPolicy(TripSetupRequest request, TripHandicapMethod handicapMethod) {
+        if (request.getHandicapsEnabled() != null && !Boolean.TRUE.equals(request.getHandicapsEnabled())) {
+            return;
+        }
+
+        if (!TripHandicapMethod.FROZEN_GHIN_INDEX.equals(handicapMethod)) {
+            return;
+        }
+
+        if (request.getFrozenHandicapIndexesByPlayerId() == null) {
+            throw new IllegalArgumentException("Frozen GHIN Index is required for every selected player.");
+        }
+
+        for (Long playerId : request.getPlayerIds()) {
+            BigDecimal frozenIndex = request.getFrozenHandicapIndexesByPlayerId().get(playerId);
+            if (frozenIndex == null) {
+                throw new IllegalArgumentException("Frozen GHIN Index is required for every selected player.");
+            }
+            if (frozenIndex.compareTo(BigDecimal.valueOf(-10.0)) < 0
+                    || frozenIndex.compareTo(BigDecimal.valueOf(54.0)) > 0) {
+                throw new IllegalArgumentException("Frozen GHIN Index must be between -10.0 and 54.0.");
+            }
+        }
+    }
+
+    private BigDecimal resolveFrozenHandicapIndex(TripSetupRequest request,
+                                                  TripHandicapMethod handicapMethod,
+                                                  Long playerId,
+                                                  Map<Long, BigDecimal> existingFrozenIndexes) {
+        if (request.getHandicapsEnabled() != null && !Boolean.TRUE.equals(request.getHandicapsEnabled())) {
+            return null;
+        }
+
+        if (!TripHandicapMethod.FROZEN_GHIN_INDEX.equals(handicapMethod)) {
+            return null;
+        }
+
+        if (request.getFrozenHandicapIndexesByPlayerId() != null
+                && request.getFrozenHandicapIndexesByPlayerId().containsKey(playerId)) {
+            return request.getFrozenHandicapIndexesByPlayerId().get(playerId);
+        }
+
+        return existingFrozenIndexes.get(playerId);
     }
 
     private void validateUniquePlayerIds(List<Long> playerIds) {
@@ -765,10 +1110,48 @@ public class TripService {
         }
     }
 
-    private void validatePlannedRounds(List<TripPlannedRoundRequest> rounds) {
+    private List<TripPlannedRoundRequest> sortPlannedRoundRequestsByPlaySequence(List<TripPlannedRoundRequest> rounds) {
+        List<TripPlannedRoundRequest> sorted = new ArrayList<TripPlannedRoundRequest>(rounds);
+        sorted.sort(new Comparator<TripPlannedRoundRequest>() {
+            @Override
+            public int compare(TripPlannedRoundRequest left, TripPlannedRoundRequest right) {
+                LocalDate leftDate = left != null ? left.getRoundDate() : null;
+                LocalDate rightDate = right != null ? right.getRoundDate() : null;
+
+                if (leftDate != null && rightDate != null && !leftDate.equals(rightDate)) {
+                    return leftDate.compareTo(rightDate);
+                }
+                if (leftDate != null && rightDate == null) {
+                    return -1;
+                }
+                if (leftDate == null && rightDate != null) {
+                    return 1;
+                }
+
+                Integer leftRoundNumber = left != null ? left.getRoundNumber() : null;
+                Integer rightRoundNumber = right != null ? right.getRoundNumber() : null;
+                if (leftRoundNumber == null && rightRoundNumber == null) {
+                    return 0;
+                }
+                if (leftRoundNumber == null) {
+                    return 1;
+                }
+                if (rightRoundNumber == null) {
+                    return -1;
+                }
+                return leftRoundNumber.compareTo(rightRoundNumber);
+            }
+        });
+        return sorted;
+    }
+
+    private void validatePlannedRounds(List<TripPlannedRoundRequest> rounds, Trip trip) {
         Set<Integer> usedRoundNumbers = new HashSet<Integer>();
-        boolean anyIncludedInFourDayStandings = false;
-        boolean anyIncludedInScrambleSeeding = false;
+        int expectedRoundCount = resolvePlannedRoundCount(trip.getPlannedRoundCount());
+
+        if (rounds.size() != expectedRoundCount) {
+            throw new IllegalArgumentException("Trip is configured for " + expectedRoundCount + " planned rounds. Update the trip round count before adding or removing round rows.");
+        }
 
         for (TripPlannedRoundRequest round : rounds) {
             if (round == null) {
@@ -780,36 +1163,81 @@ public class TripService {
             if (round.getRoundNumber() < 1) {
                 throw new IllegalArgumentException("roundNumber must be >= 1.");
             }
+            if (round.getRoundNumber() > expectedRoundCount) {
+                throw new IllegalArgumentException("roundNumber must be <= the trip planned round count.");
+            }
             if (!usedRoundNumbers.add(round.getRoundNumber())) {
                 throw new IllegalArgumentException("Duplicate planned round number: " + round.getRoundNumber());
             }
-            if ((round.getStandardTeeId() != null || round.getAlternateTeeId() != null) && round.getCourseId() == null) {
-                throw new IllegalArgumentException("courseId is required when tee selections are provided for round " + round.getRoundNumber());
+            validateRoundDateWithinTripDates(trip, round.getRoundDate(), round.getRoundNumber());
+
+            if (round.getDefaultTeeId() != null && round.getCourseId() == null) {
+                throw new IllegalArgumentException("courseId is required when a men's default tee is provided for round " + round.getRoundNumber());
             }
+            if (round.getWomenDefaultTeeId() != null && round.getCourseId() == null) {
+                throw new IllegalArgumentException("courseId is required when a women's default tee is provided for round " + round.getRoundNumber());
+            }
+            validatePlannedRoundTee(round.getRoundNumber(), round.getCourseId(), round.getDefaultTeeId(), "men's", "M");
+            validatePlannedRoundTee(round.getRoundNumber(), round.getCourseId(), round.getWomenDefaultTeeId(), "women's", "F");
+            RoundFormat parsedFormat = null;
             if (round.getFormat() != null && !round.getFormat().isBlank()) {
-                parseRoundFormat(round.getFormat());
+                parsedFormat = parseRoundFormat(round.getFormat());
             }
-            if (round.getAlternateTeeId() != null
-                    && round.getStandardTeeId() != null
-                    && round.getAlternateTeeId().equals(round.getStandardTeeId())) {
-                throw new IllegalArgumentException(
-                        "alternateTeeId must be different from standardTeeId for round " + round.getRoundNumber()
-                );
-            }
-            if (Boolean.TRUE.equals(round.getIncludeInFourDayStandings())) {
-                anyIncludedInFourDayStandings = true;
-            }
-            if (Boolean.TRUE.equals(round.getIncludeInScrambleSeeding())) {
-                anyIncludedInScrambleSeeding = true;
-            }
+            resolveScrambleTeamSize(parsedFormat, round.getScrambleTeamSize());
         }
 
-        if (!anyIncludedInFourDayStandings) {
-            throw new IllegalArgumentException("At least one planned round must be included in the 4-day tournament standings.");
+    }
+
+    private void validatePlannedRoundTee(Integer roundNumber, Long courseId, Long teeId, String label, String gender) {
+        if (teeId == null) {
+            return;
         }
-        if (!anyIncludedInScrambleSeeding) {
-            throw new IllegalArgumentException("At least one planned round must be included in scramble seeding.");
+        CourseTee tee = courseTeeRepository.findById(teeId)
+                .orElseThrow(() -> new IllegalArgumentException("Round " + roundNumber + " " + label + " default tee was not found."));
+        if (courseId != null && (tee.getCourse() == null || !courseId.equals(tee.getCourse().getId()))) {
+            throw new IllegalArgumentException("Round " + roundNumber + " " + label + " default tee does not belong to the selected course.");
         }
+        if (!tee.isEligibleForGender(gender)) {
+            throw new IllegalArgumentException("Round " + roundNumber + " " + label + " default tee is not eligible for that gender.");
+        }
+
+        long holeCount = countConfiguredTeeHoles(tee);
+        if (holeCount != 18) {
+            throw new IllegalArgumentException(
+                    "Round " + roundNumber + " " + label + " default tee has " + holeCount +
+                            " holes configured. Open Course Master and enter all 18 holes before starting the trip."
+            );
+        }
+    }
+
+    private long countConfiguredTeeHoles(CourseTee tee) {
+        if (tee == null || tee.getId() == null) {
+            return 0;
+        }
+
+        long regularHoleCount = courseHoleRepository.countByCourseTee_Id(tee.getId());
+        if (regularHoleCount == 18) {
+            return regularHoleCount;
+        }
+
+        long comboHoleCount = courseTeeComboHoleRepository.countByComboTee_Id(tee.getId());
+        if (comboHoleCount > 0) {
+            return comboHoleCount;
+        }
+
+        return regularHoleCount;
+    }
+
+    private Integer resolveScrambleTeamSize(RoundFormat format, Integer requestedSize) {
+        if (format != RoundFormat.TEAM_SCRAMBLE) {
+            return 4;
+        }
+
+        int size = requestedSize == null ? 4 : requestedSize;
+        if (size < 2 || size > 4) {
+            throw new IllegalArgumentException("Scramble team size must be 2, 3, or 4.");
+        }
+        return size;
     }
 
     private TripPlannedRoundResponse toPlannedRoundResponse(TripPlannedRound round) {
@@ -818,30 +1246,30 @@ public class TripService {
         response.setRoundNumber(round.getRoundNumber());
         response.setRoundDate(round.getRoundDate());
         response.setCourseId(round.getCourseId());
-        response.setStandardTeeId(round.getStandardTeeId());
-        response.setAlternateTeeId(round.getAlternateTeeId());
+        response.setDefaultTeeId(round.getStandardTeeId());
+        response.setWomenDefaultTeeId(round.getWomenDefaultTeeId());
         response.setFormat(round.getFormat() != null ? round.getFormat().name() : null);
+        response.setScrambleTeamSize(resolveScrambleTeamSize(round.getFormat(), round.getScrambleTeamSize()));
         response.setIncludeInFourDayStandings(Boolean.TRUE.equals(round.getIncludeInFourDayStandings()));
-        response.setIncludeInScrambleSeeding(Boolean.TRUE.equals(round.getIncludeInScrambleSeeding()));
 
         Course course = null;
         if (round.getCourseId() != null) {
             course = courseRepository.findById(round.getCourseId()).orElse(null);
         }
 
-        CourseTee standardTee = null;
+        CourseTee defaultTee = null;
         if (round.getStandardTeeId() != null) {
-            standardTee = courseTeeRepository.findById(round.getStandardTeeId()).orElse(null);
+            defaultTee = courseTeeRepository.findById(round.getStandardTeeId()).orElse(null);
         }
 
-        CourseTee alternateTee = null;
-        if (round.getAlternateTeeId() != null) {
-            alternateTee = courseTeeRepository.findById(round.getAlternateTeeId()).orElse(null);
+        CourseTee womenDefaultTee = null;
+        if (round.getWomenDefaultTeeId() != null) {
+            womenDefaultTee = courseTeeRepository.findById(round.getWomenDefaultTeeId()).orElse(null);
         }
 
         response.setCourseName(course != null ? course.getName() : null);
-        response.setStandardTeeDisplay(formatCourseTeeDisplay(standardTee));
-        response.setAlternateTeeDisplay(formatCourseTeeDisplay(alternateTee));
+        response.setDefaultTeeDisplay(formatCourseTeeDisplay(defaultTee));
+        response.setWomenDefaultTeeDisplay(formatWomenCourseTeeDisplay(womenDefaultTee));
 
         return response;
     }
@@ -856,7 +1284,20 @@ public class TripService {
             return teeName;
         }
 
-        return teeName + " (" + tee.getCourseRating() + "/" + tee.getSlope() + ")";
+        return teeName + " (Rating " + tee.getCourseRating() + " / Slope " + tee.getSlope() + ")";
+    }
+
+    private String formatWomenCourseTeeDisplay(CourseTee tee) {
+        if (tee == null) {
+            return null;
+        }
+
+        String teeName = tee.getTeeName();
+        if (tee.getWomenCourseRating() == null || tee.getWomenSlope() == null) {
+            return teeName;
+        }
+
+        return teeName + " (Rating " + tee.getWomenCourseRating() + " / Slope " + tee.getWomenSlope() + ")";
     }
 
     private RoundFormat parseRoundFormat(String value) {
@@ -872,27 +1313,13 @@ public class TripService {
     }
 
     private boolean defaultIncludeInFourDayStandings(int roundNumber) {
-        return roundNumber <= 4;
+        return false;
     }
 
-    private boolean defaultIncludeInScrambleSeeding(int roundNumber) {
-        return roundNumber <= 3;
-    }
-
-    private RoundFormat defaultFormatForRound(int roundNumber) {
-        if (roundNumber == 1) {
-            return RoundFormat.MIDDLE_MAN;
-        }
-        if (roundNumber == 2) {
-            return RoundFormat.ONE_TWO_THREE;
-        }
-        if (roundNumber == 3) {
-            return RoundFormat.TWO_MAN_LOW_NET;
-        }
-        if (roundNumber == 4) {
-            return RoundFormat.THREE_LOW_NET;
-        }
-        return RoundFormat.TEAM_SCRAMBLE;
+private RoundFormat defaultFormatForRound(int roundNumber) {
+        // Path B: new planned rounds should not inherit the old fixed Myrtle sequence.
+        // The game is intentionally selected by the user on Trip Round Planning.
+        return null;
     }
 
     private boolean calculateNeedsGrouping(List<Scorecard> scorecards, List<RoundGroup> groups) {

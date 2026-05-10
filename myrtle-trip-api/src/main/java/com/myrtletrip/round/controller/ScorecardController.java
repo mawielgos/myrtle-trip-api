@@ -43,13 +43,4 @@ public class ScorecardController {
         return ResponseEntity.ok().build();
     }
 
-    @PutMapping("/{scorecardId}/alternate-tee")
-    public ResponseEntity<Void> setAlternateTee(
-            @PathVariable Long scorecardId,
-            @RequestParam boolean useAlternateTee) {
-
-        scorecardHandicapService.setAlternateTee(scorecardId, useAlternateTee);
-        roundRecalculationOrchestrationService.handlePostScorecardChange(scorecardId);
-        return ResponseEntity.ok().build();
-    }
 }

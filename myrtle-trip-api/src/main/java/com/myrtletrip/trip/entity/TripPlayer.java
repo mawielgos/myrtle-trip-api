@@ -3,6 +3,8 @@ package com.myrtletrip.trip.entity;
 import com.myrtletrip.player.entity.Player;
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(
         name = "trip_player",
@@ -26,6 +28,9 @@ public class TripPlayer {
 
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
+
+    @Column(name = "frozen_handicap_index", precision = 5, scale = 1)
+    private BigDecimal frozenHandicapIndex;
 
     public Long getId() {
         return id;
@@ -53,5 +58,13 @@ public class TripPlayer {
 
     public void setDisplayOrder(Integer displayOrder) {
         this.displayOrder = displayOrder;
+    }
+
+    public BigDecimal getFrozenHandicapIndex() {
+        return frozenHandicapIndex;
+    }
+
+    public void setFrozenHandicapIndex(BigDecimal frozenHandicapIndex) {
+        this.frozenHandicapIndex = frozenHandicapIndex;
     }
 }

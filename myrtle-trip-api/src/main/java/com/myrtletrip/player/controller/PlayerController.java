@@ -17,6 +17,10 @@ import java.util.List;
 @CrossOrigin
 public class PlayerController {
 
+    private static final String HANDICAP_METHOD_GHIN = "GHIN";
+    private static final String HANDICAP_METHOD_DB_SCORE_HISTORY = "DB_SCORE_HISTORY";
+    private static final String HANDICAP_METHOD_LEGACY_MYRTLE_BEACH = "MYRTLE_BEACH";
+
     private final PlayerRepository playerRepository;
     private final FrozenGhinImportService service;
 
@@ -114,7 +118,7 @@ public class PlayerController {
         player.setCell(trimToNull(request.getCell()));
         player.setVenmoId(trimToNull(request.getVenmoId()));
         player.setZelleId(trimToNull(request.getZelleId()));
-        player.setHandicapMethod(trimToNull(request.getHandicapMethod()));
+        player.setHandicapMethod(normalizeHandicapMethod(request.getHandicapMethod()));
         player.setGender(normalizeGender(request.getGender()));
 
         if (request.getActive() == null) {
@@ -132,7 +136,7 @@ public class PlayerController {
         response.setLastName(player.getLastName());
         response.setGhinNumber(player.getGhinNumber());
         response.setActive(player.isActive());
-        response.setHandicapMethod(player.getHandicapMethod());
+        response.setHandicapMethod(normalizeHandicapMethod(player.getHandicapMethod()));
         response.setEmail(player.getEmail());
         response.setCell(player.getCell());
         response.setGender(normalizeGender(player.getGender()));
@@ -151,7 +155,7 @@ public class PlayerController {
         response.setCell(player.getCell());
         response.setVenmoId(player.getVenmoId());
         response.setZelleId(player.getZelleId());
-        response.setHandicapMethod(player.getHandicapMethod());
+        response.setHandicapMethod(normalizeHandicapMethod(player.getHandicapMethod()));
         response.setGender(normalizeGender(player.getGender()));
         return response;
     }
@@ -166,6 +170,25 @@ public class PlayerController {
             return null;
         }
 
+        return trimmed;
+    }
+
+    private String normalizeHandicapMethod(String value) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            return null;
+        }
+
+        String normalized = trimmed.toUpperCase();
+        if (HANDICAP_METHOD_LEGACY_MYRTLE_BEACH.equals(normalized)) {
+            return HANDICAP_METHOD_DB_SCORE_HISTORY;
+        }
+        if (HANDICAP_METHOD_DB_SCORE_HISTORY.equals(normalized)) {
+            return HANDICAP_METHOD_DB_SCORE_HISTORY;
+        }
+        if (HANDICAP_METHOD_GHIN.equals(normalized)) {
+            return HANDICAP_METHOD_GHIN;
+        }
         return trimmed;
     }
 

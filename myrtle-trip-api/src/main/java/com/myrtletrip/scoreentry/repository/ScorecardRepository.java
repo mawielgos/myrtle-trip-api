@@ -17,4 +17,11 @@ public interface ScorecardRepository extends JpaRepository<Scorecard, Long> {
     long countByRoundId(Long roundId);
     
     long countByRoundIdAndTeamIsNull(Long roundId);
+    long countByRound_Trip_IdAndGrossScoreIsNotNull(Long tripId);
+
+    long countByRound_Trip_IdAndAdjustedGrossScoreIsNotNull(Long tripId);
+
+    long countByRound_Trip_IdAndNetScoreIsNotNull(Long tripId);
+
+    void deleteByRound_Trip_Id(Long tripId);
 }

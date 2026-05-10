@@ -55,9 +55,6 @@ public class ScoreHistoryEntry {
     @Column(name = "included_in_myrtle_calc")
     private Boolean includedInMyrtleCalc = true;
 
-    @Column(name = "used_alternate_tee", nullable = false)
-    private Boolean usedAlternateTee = false;
-
     @Column(name = "handicap_group_code", length = 50)
     private String handicapGroupCode;
 
@@ -173,15 +170,7 @@ public class ScoreHistoryEntry {
         this.includedInMyrtleCalc = includedInMyrtleCalc;
     }
 
-    public Boolean getUsedAlternateTee() {
-        return usedAlternateTee;
-    }
-
-    public void setUsedAlternateTee(Boolean usedAlternateTee) {
-        this.usedAlternateTee = usedAlternateTee;
-    }
-
-    public String getHandicapGroupCode() {
+public String getHandicapGroupCode() {
         return handicapGroupCode;
     }
 

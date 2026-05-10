@@ -37,8 +37,8 @@ public class TripPlannedRound {
     @Column(name = "standard_tee_id")
     private Long standardTeeId;
 
-    @Column(name = "alternate_tee_id")
-    private Long alternateTeeId;
+    @Column(name = "women_default_tee_id")
+    private Long womenDefaultTeeId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "format")
@@ -47,8 +47,8 @@ public class TripPlannedRound {
     @Column(name = "include_in_four_day_standings", nullable = false)
     private Boolean includeInFourDayStandings = false;
 
-    @Column(name = "include_in_scramble_seeding", nullable = false)
-    private Boolean includeInScrambleSeeding = false;
+    @Column(name = "scramble_team_size")
+    private Integer scrambleTeamSize = 4;
 
     public Long getId() {
         return id;
@@ -94,12 +94,12 @@ public class TripPlannedRound {
         this.standardTeeId = standardTeeId;
     }
 
-    public Long getAlternateTeeId() {
-        return alternateTeeId;
+public Long getWomenDefaultTeeId() {
+        return womenDefaultTeeId;
     }
 
-    public void setAlternateTeeId(Long alternateTeeId) {
-        this.alternateTeeId = alternateTeeId;
+    public void setWomenDefaultTeeId(Long womenDefaultTeeId) {
+        this.womenDefaultTeeId = womenDefaultTeeId;
     }
 
     public RoundFormat getFormat() {
@@ -118,11 +118,11 @@ public class TripPlannedRound {
         this.includeInFourDayStandings = includeInFourDayStandings;
     }
 
-    public Boolean getIncludeInScrambleSeeding() {
-        return includeInScrambleSeeding;
+public Integer getScrambleTeamSize() {
+        return scrambleTeamSize;
     }
 
-    public void setIncludeInScrambleSeeding(Boolean includeInScrambleSeeding) {
-        this.includeInScrambleSeeding = includeInScrambleSeeding;
+    public void setScrambleTeamSize(Integer scrambleTeamSize) {
+        this.scrambleTeamSize = scrambleTeamSize;
     }
 }

@@ -12,4 +12,6 @@ public interface RoundTeamPlayerRepository extends JpaRepository<RoundTeamPlayer
     List<RoundTeamPlayer> findByRoundTeam_Round_IdOrderByRoundTeam_TeamNumberAscPlayerOrderAsc(Long roundId);
 
     void deleteByRoundTeam_Round_Id(Long roundId);
+
+    void deleteByRoundTeam_Round_Trip_Id(Long tripId);
 }

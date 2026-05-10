@@ -3,16 +3,18 @@ package com.myrtletrip.standings.dto;
 import java.util.ArrayList;
 import java.util.List;
 
-public class FourDayStandingsResponse {
+public class TournamentStandingsResponse {
 
     private Long tripId;
     private String tripName;
+    private String tournamentName;
+    private String standingsLabel;
     private Integer completedRounds;
     private Integer requiredRounds;
     private Boolean leaderboardFinal;
     private Integer leaderboardParTotal;
     private List<String> roundLabels = new ArrayList<>();
-    private List<FourDayStandingRowResponse> rows = new ArrayList<>();
+    private List<TournamentStandingRowResponse> rows = new ArrayList<>();
 
     public Long getTripId() {
         return tripId;
@@ -28,6 +30,22 @@ public class FourDayStandingsResponse {
 
     public void setTripName(String tripName) {
         this.tripName = tripName;
+    }
+
+    public String getTournamentName() {
+        return tournamentName;
+    }
+
+    public void setTournamentName(String tournamentName) {
+        this.tournamentName = tournamentName;
+    }
+
+    public String getStandingsLabel() {
+        return standingsLabel;
+    }
+
+    public void setStandingsLabel(String standingsLabel) {
+        this.standingsLabel = standingsLabel;
     }
 
     public Integer getCompletedRounds() {
@@ -70,11 +88,11 @@ public class FourDayStandingsResponse {
         this.roundLabels = roundLabels;
     }
 
-    public List<FourDayStandingRowResponse> getRows() {
+    public List<TournamentStandingRowResponse> getRows() {
         return rows;
     }
 
-    public void setRows(List<FourDayStandingRowResponse> rows) {
+    public void setRows(List<TournamentStandingRowResponse> rows) {
         this.rows = rows;
     }
 }

@@ -11,4 +11,6 @@ public interface RoundTeeHoleRepository extends JpaRepository<RoundTeeHole, Long
     List<RoundTeeHole> findByRoundTee_IdOrderByHoleNumberAsc(Long roundTeeId);
 
     Optional<RoundTeeHole> findByRoundTee_IdAndHoleNumber(Long roundTeeId, Integer holeNumber);
+
+    void deleteByRoundTee_Round_Trip_Id(Long tripId);
 }

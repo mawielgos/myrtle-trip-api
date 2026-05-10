@@ -67,7 +67,7 @@ public class RoundRecalculationOrchestrationService {
 
         Long tripId = round.getTrip().getId();
 
-        // Corrections can change Myrtles Cup standings and all persisted payout rows.
+        // Corrections can change multi-round tournament standings and all persisted payout rows.
         // Flush and clear so the prize recalculation reads the just-saved Scorecard/HoleScore data.
         entityManager.flush();
         entityManager.clear();

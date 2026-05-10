@@ -6,6 +6,7 @@ import com.myrtletrip.scorehistory.repository.ScoreHistoryEntryRepository;
 import com.myrtletrip.trip.dto.GhinFixRowResponse;
 import com.myrtletrip.trip.dto.SaveGhinFixRequest;
 import com.myrtletrip.trip.entity.Trip;
+import com.myrtletrip.trip.entity.TripStatus;
 import com.myrtletrip.trip.repository.TripRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,6 +56,8 @@ public class TripGhinFixService {
                                       SaveGhinFixRequest request) {
         Trip trip = getTripWithCode(tripId);
 
+        assertTripSetupEditable(trip);
+
         if (request == null || request.getDifferential() == null) {
             throw new IllegalArgumentException("Differential is required.");
         }
@@ -78,6 +81,14 @@ public class TripGhinFixService {
 
         ScoreHistoryEntry saved = scoreHistoryEntryRepository.save(entry);
         return mapRow(saved);
+    }
+
+    private void assertTripSetupEditable(Trip trip) {
+        if (TripStatus.IN_PROGRESS.equals(trip.getStatus())
+                || TripStatus.COMPLETE.equals(trip.getStatus())
+                || Boolean.TRUE.equals(trip.getInitialized())) {
+            throw new IllegalStateException("GHIN fixes cannot be changed after the trip has started.");
+        }
     }
 
     private Trip getTripWithCode(Long tripId) {

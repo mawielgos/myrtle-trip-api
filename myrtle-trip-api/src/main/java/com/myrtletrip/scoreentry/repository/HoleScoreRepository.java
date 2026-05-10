@@ -15,4 +15,7 @@ public interface HoleScoreRepository extends JpaRepository<HoleScore, Long> {
     List<HoleScore> findByScorecard_Id(Long scorecardId);
 
     List<HoleScore> findByScorecard_Round_Id(Long roundId);
+    long countByScorecard_Round_Trip_IdAndStrokesIsNotNull(Long tripId);
+
+    void deleteByScorecard_Round_Trip_Id(Long tripId);
 }

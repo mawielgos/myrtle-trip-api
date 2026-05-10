@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface TripPlayerRepository extends JpaRepository<TripPlayer, Long> {
 
@@ -18,6 +19,8 @@ public interface TripPlayerRepository extends JpaRepository<TripPlayer, Long> {
     List<TripPlayer> findByTrip_Id(Long tripId);
 
     List<TripPlayer> findByTrip_IdOrderByDisplayOrderAsc(Long tripId);
+
+    Optional<TripPlayer> findByTrip_IdAndPlayer_Id(Long tripId, Long playerId);
 
     long countByTrip(Trip trip);
 

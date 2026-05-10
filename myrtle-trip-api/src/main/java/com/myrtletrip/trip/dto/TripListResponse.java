@@ -10,10 +10,15 @@ public class TripListResponse {
     private Integer tripYear;
     private Long playerCount;
     private Long roundCount;
+    private Integer plannedRoundCount;
     private String status;
+    private Boolean correctionMode;
     private LocalDate startDate;
     private LocalDate endDate;
     private Boolean canDelete;
+    private Boolean archived;
+    private Boolean canArchive;
+    private Boolean canRestore;
 
     public Long getTripId() {
         return tripId;
@@ -63,12 +68,28 @@ public class TripListResponse {
         this.roundCount = roundCount;
     }
 
+    public Integer getPlannedRoundCount() {
+        return plannedRoundCount;
+    }
+
+    public void setPlannedRoundCount(Integer plannedRoundCount) {
+        this.plannedRoundCount = plannedRoundCount;
+    }
+
     public String getStatus() {
         return status;
     }
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Boolean getCorrectionMode() {
+        return correctionMode;
+    }
+
+    public void setCorrectionMode(Boolean correctionMode) {
+        this.correctionMode = correctionMode;
     }
 
     public LocalDate getStartDate() {
@@ -93,5 +114,29 @@ public class TripListResponse {
 
     public void setCanDelete(Boolean canDelete) {
         this.canDelete = canDelete;
+    }
+
+    public Boolean getArchived() {
+        return archived;
+    }
+
+    public void setArchived(Boolean archived) {
+        this.archived = archived;
+    }
+
+    public Boolean getCanArchive() {
+        return canArchive;
+    }
+
+    public void setCanArchive(Boolean canArchive) {
+        this.canArchive = canArchive;
+    }
+
+    public Boolean getCanRestore() {
+        return canRestore;
+    }
+
+    public void setCanRestore(Boolean canRestore) {
+        this.canRestore = canRestore;
     }
 }

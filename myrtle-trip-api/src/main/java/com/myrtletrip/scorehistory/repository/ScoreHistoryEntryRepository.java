@@ -4,6 +4,8 @@ import com.myrtletrip.course.entity.Course;
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.scorehistory.entity.ScoreHistoryEntry;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.Collection;
@@ -60,6 +62,17 @@ public interface ScoreHistoryEntryRepository extends JpaRepository<ScoreHistoryE
 
     long countByHandicapGroupCode(String handicapGroupCode);
 
+    long countByPlayerAndHandicapGroupCodeAndSourceTypeAndDifferentialIsNotNullAndManualDifferentialRequiredFalse(
+            Player player,
+            String handicapGroupCode,
+            String sourceType
+    );
+
+    long countByPlayerAndSourceTypeAndDifferentialIsNotNullAndManualDifferentialRequiredFalse(
+            Player player,
+            String sourceType
+    );
+
     long countByHandicapGroupCodeAndSourceTypeAndManualDifferentialRequiredTrue(
             String handicapGroupCode,
             String sourceType
@@ -80,9 +93,53 @@ public interface ScoreHistoryEntryRepository extends JpaRepository<ScoreHistoryE
             String sourceType
     );
 
+    long countByPlayer_IdAndHandicapGroupCodeAndSourceType(
+            Long playerId,
+            String handicapGroupCode,
+            String sourceType
+    );
+
+    long countByPlayer_IdAndHandicapGroupCodeAndSourceTypeAndIdNot(
+            Long playerId,
+            String handicapGroupCode,
+            String sourceType,
+            Long id
+    );
+
+    List<ScoreHistoryEntry> findByPlayer_IdAndHandicapGroupCodeAndSourceTypeOrderByPostingOrderAscIdAsc(
+            Long playerId,
+            String handicapGroupCode,
+            String sourceType
+    );
+
+    List<ScoreHistoryEntry> findByPlayer_IdAndHandicapGroupCodeAndSourceTypeAndIdNotOrderByPostingOrderAscIdAsc(
+            Long playerId,
+            String handicapGroupCode,
+            String sourceType,
+            Long id
+    );
+
     Optional<ScoreHistoryEntry> findByIdAndHandicapGroupCodeAndSourceType(
             Long id,
             String handicapGroupCode,
             String sourceType
     );
+
+    @Query("""
+            select e
+            from ScoreHistoryEntry e
+            where e.sourceType = :sourceType
+              and e.player.id in :playerIds
+              and e.round is not null
+              and e.round.trip.id <> :tripId
+              and e.differential is not null
+              and e.manualDifferentialRequired = false
+            order by e.player.displayName asc, e.scoreDate desc, e.id desc
+            """)
+    List<ScoreHistoryEntry> findImportablePriorTripRoundEntries(
+            @Param("tripId") Long tripId,
+            @Param("playerIds") Collection<Long> playerIds,
+            @Param("sourceType") String sourceType
+    );
 }
+

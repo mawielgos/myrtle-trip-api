@@ -1,5 +1,7 @@
 package com.myrtletrip.trip.dto;
 
+import java.time.LocalDate;
+
 public class TripDetailResponse {
 
     private Long tripId;
@@ -7,11 +9,19 @@ public class TripDetailResponse {
     private String tripCode;
     private Integer tripYear;
     private Integer entryFee;
+    private LocalDate tripStartDate;
+    private LocalDate tripEndDate;
+    private Integer plannedRoundCount;
+    private Boolean handicapsEnabled;
+    private String handicapMethod;
     private Boolean initialized;
     private String status;
+    private Boolean correctionMode;
+    private Boolean archived;
     private CurrentRoundResponse currentRound;
     private Long unresolvedGhinFixCount;
     private TripReadinessResponse readiness;
+    private Boolean hasFemalePlayers;
 
     public Long getTripId() {
         return tripId;
@@ -53,6 +63,46 @@ public class TripDetailResponse {
         this.entryFee = entryFee;
     }
 
+    public LocalDate getTripStartDate() {
+        return tripStartDate;
+    }
+
+    public void setTripStartDate(LocalDate tripStartDate) {
+        this.tripStartDate = tripStartDate;
+    }
+
+    public LocalDate getTripEndDate() {
+        return tripEndDate;
+    }
+
+    public void setTripEndDate(LocalDate tripEndDate) {
+        this.tripEndDate = tripEndDate;
+    }
+
+    public Integer getPlannedRoundCount() {
+        return plannedRoundCount;
+    }
+
+    public void setPlannedRoundCount(Integer plannedRoundCount) {
+        this.plannedRoundCount = plannedRoundCount;
+    }
+
+    public Boolean getHandicapsEnabled() {
+        return handicapsEnabled;
+    }
+
+    public void setHandicapsEnabled(Boolean handicapsEnabled) {
+        this.handicapsEnabled = handicapsEnabled;
+    }
+
+    public String getHandicapMethod() {
+        return handicapMethod;
+    }
+
+    public void setHandicapMethod(String handicapMethod) {
+        this.handicapMethod = handicapMethod;
+    }
+
     public Boolean getInitialized() {
         return initialized;
     }
@@ -67,6 +117,22 @@ public class TripDetailResponse {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Boolean getCorrectionMode() {
+        return correctionMode;
+    }
+
+    public void setCorrectionMode(Boolean correctionMode) {
+        this.correctionMode = correctionMode;
+    }
+
+    public Boolean getArchived() {
+        return archived;
+    }
+
+    public void setArchived(Boolean archived) {
+        this.archived = archived;
     }
 
     public CurrentRoundResponse getCurrentRound() {
@@ -91,5 +157,13 @@ public class TripDetailResponse {
 
     public void setReadiness(TripReadinessResponse readiness) {
         this.readiness = readiness;
+    }
+
+    public Boolean getHasFemalePlayers() {
+        return hasFemalePlayers;
+    }
+
+    public void setHasFemalePlayers(Boolean hasFemalePlayers) {
+        this.hasFemalePlayers = hasFemalePlayers;
     }
 }

@@ -6,7 +6,6 @@ public class RoundGroupAssignmentItemRequest {
     private Long playerId;
     private Integer groupNumber;
     private Integer seatOrder;
-    private Boolean useAlternateTee;
     private Long roundTeeId;
 
     public Long getScorecardId() {
@@ -39,14 +38,6 @@ public class RoundGroupAssignmentItemRequest {
 
     public void setSeatOrder(Integer seatOrder) {
         this.seatOrder = seatOrder;
-    }
-
-    public Boolean getUseAlternateTee() {
-        return useAlternateTee;
-    }
-
-    public void setUseAlternateTee(Boolean useAlternateTee) {
-        this.useAlternateTee = useAlternateTee;
     }
 
     public Long getRoundTeeId() {

@@ -23,6 +23,7 @@ import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.trip.repository.TripPlayerRepository;
 import com.myrtletrip.trip.repository.TripRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,7 @@ public class RoundSetupService {
     private final RoundTeeHoleRepository roundTeeHoleRepository;
     private final ScorecardRepository scorecardRepository;
     private final RoundHandicapService roundHandicapService;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundSetupService(TripRepository tripRepository,
                              TripPlayerRepository tripPlayerRepository,
@@ -53,7 +55,8 @@ public class RoundSetupService {
                              RoundTeeRepository roundTeeRepository,
                              RoundTeeHoleRepository roundTeeHoleRepository,
                              ScorecardRepository scorecardRepository,
-                             RoundHandicapService roundHandicapService) {
+                             RoundHandicapService roundHandicapService,
+                             TripEditingGuardService tripEditingGuardService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.courseRepository = courseRepository;
@@ -64,12 +67,14 @@ public class RoundSetupService {
         this.roundTeeHoleRepository = roundTeeHoleRepository;
         this.scorecardRepository = scorecardRepository;
         this.roundHandicapService = roundHandicapService;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
     public Long startRound(RoundSetupRequest request) {
         Trip trip = tripRepository.findById(request.getTripId())
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found"));
+        tripEditingGuardService.assertStructureEditable(trip);
 
         Course course = courseRepository.findById(request.getCourseId())
                 .orElseThrow(() -> new IllegalArgumentException("Course not found"));
@@ -104,6 +109,7 @@ public class RoundSetupService {
         round.setRoundDate(request.getRoundDate());
         round.setFinalized(false);
         round.setFormat(format);
+        round.setScrambleTeamSize(4);
         round.setHandicapPercent(handicapPercent);
         round = roundRepository.save(round);
 
@@ -186,7 +192,7 @@ public class RoundSetupService {
 
         List<CourseHole> sourceHoles = courseHoleRepository.findByCourseTee_IdOrderByHoleNumberAsc(sourceCourseTee.getId());
         if (sourceHoles.size() != 18) {
-            throw new IllegalStateException("Expected 18 holes for course tee " + sourceCourseTee.getId() + " but found " + sourceHoles.size());
+            throw new IllegalStateException("Course tee " + sourceCourseTee.getId() + " (" + sourceCourseTee.getTeeName() + ") has " + sourceHoles.size() + " holes configured. Open Course Master and enter all 18 holes before starting the round.");
         }
 
         for (CourseHole sourceHole : sourceHoles) {

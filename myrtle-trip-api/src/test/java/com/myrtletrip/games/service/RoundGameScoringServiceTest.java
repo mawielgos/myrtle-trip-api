@@ -14,6 +14,7 @@ import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -36,6 +37,7 @@ public class RoundGameScoringServiceTest {
         RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
         ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
         HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
 
         List<RoundGameScorer> scorers = new ArrayList<RoundGameScorer>();
         scorers.add(new OneTwoThreeScorer());
@@ -45,7 +47,8 @@ public class RoundGameScoringServiceTest {
                 roundScoringDataService,
                 scorecardRepository,
                 holeScoreRepository,
-                scorers
+                scorers,
+                tripEditingGuardService
         );
 
         Round round = mock(Round.class);
@@ -123,6 +126,7 @@ public class RoundGameScoringServiceTest {
         RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
         ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
         HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
 
         List<RoundGameScorer> scorers = new ArrayList<RoundGameScorer>();
         scorers.add(new ThreeLowNetScorer());
@@ -132,7 +136,8 @@ public class RoundGameScoringServiceTest {
                 roundScoringDataService,
                 scorecardRepository,
                 holeScoreRepository,
-                scorers
+                scorers,
+                tripEditingGuardService
         );
 
         Round round = mock(Round.class);

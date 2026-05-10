@@ -1,5 +1,6 @@
 package com.myrtletrip.round.service;
 
+import com.myrtletrip.handicap.service.RoundHandicapService;
 import com.myrtletrip.round.dto.ScorecardDetailResponse;
 import com.myrtletrip.round.dto.ScorecardHoleResponse;
 import com.myrtletrip.round.entity.RoundTee;
@@ -13,6 +14,8 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,15 +27,18 @@ public class ScorecardQueryService {
     private final HoleScoreRepository holeScoreRepository;
     private final RoundTeeHoleRepository roundTeeHoleRepository;
     private final RoundTeeResolver roundTeeResolver;
+    private final RoundHandicapService roundHandicapService;
 
     public ScorecardQueryService(ScorecardRepository scorecardRepository,
                                  HoleScoreRepository holeScoreRepository,
                                  RoundTeeHoleRepository roundTeeHoleRepository,
-                                 RoundTeeResolver roundTeeResolver) {
+                                 RoundTeeResolver roundTeeResolver,
+                                 RoundHandicapService roundHandicapService) {
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
         this.roundTeeHoleRepository = roundTeeHoleRepository;
         this.roundTeeResolver = roundTeeResolver;
+        this.roundHandicapService = roundHandicapService;
     }
 
     @Transactional(readOnly = true)
@@ -47,6 +53,7 @@ public class ScorecardQueryService {
         response.setScorecardId(scorecard.getId());
         response.setPlayerId(scorecard.getPlayer().getId());
         response.setPlayerName(scorecard.getPlayer().getDisplayName());
+        populateHandicapSnapshot(response, scorecard);
         response.setCourseHandicap(scorecard.getCourseHandicap());
         response.setPlayingHandicap(scorecard.getPlayingHandicap());
         response.setGrossScore(scorecard.getGrossScore());
@@ -55,9 +62,8 @@ public class ScorecardQueryService {
         response.setTeeName(scorecard.getRound().getDefaultRoundTee() != null
                 ? scorecard.getRound().getDefaultRoundTee().getTeeName()
                 : null);
-        response.setAlternateTeeName(null);
         response.setCurrentTeeName(effectiveRoundTee != null ? effectiveRoundTee.getTeeName() : null);
-        response.setUseAlternateTee(false);
+        response.setRoundTeeId(effectiveRoundTee != null ? effectiveRoundTee.getId() : null);
 
         Map<Integer, HoleScore> holeScoreByNumber = new HashMap<>();
         for (HoleScore holeScore : holeScores) {
@@ -96,4 +102,61 @@ public class ScorecardQueryService {
 
         return response;
     }
+
+    private void populateHandicapSnapshot(ScorecardDetailResponse response, Scorecard scorecard) {
+        if (response == null || scorecard == null) {
+            return;
+        }
+
+        if (scorecard.getRound() == null || scorecard.getRound().getRoundDate() == null || scorecard.getRound().getTrip() == null) {
+            return;
+        }
+
+        response.setHandicapAsOfDate(scorecard.getRound().getRoundDate());
+        response.setHandicapMethod(scorecard.getPlayer() != null ? scorecard.getPlayer().getHandicapMethod() : null);
+        response.setHandicapLabel(buildHandicapLabel(scorecard));
+        response.setTripIndex(calculateTripIndexSafely(scorecard));
+    }
+
+    private BigDecimal calculateTripIndexSafely(Scorecard scorecard) {
+        try {
+            if (scorecard.getRound() == null
+                    || scorecard.getRound().getTrip() == null
+                    || scorecard.getRound().getTrip().getTripCode() == null) {
+                return null;
+            }
+
+            return roundHandicapService.calculateTripIndex(scorecard, scorecard.getRound().getTrip().getTripCode());
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private String buildHandicapLabel(Scorecard scorecard) {
+        if (scorecard == null || scorecard.getRound() == null || scorecard.getRound().getRoundDate() == null) {
+            return null;
+        }
+
+        String method = scorecard.getPlayer() != null ? scorecard.getPlayer().getHandicapMethod() : null;
+        String displayMethod = displayHandicapMethod(method);
+        LocalDate roundDate = scorecard.getRound().getRoundDate();
+        return displayMethod + " index as of " + roundDate + " (same-day scores excluded)";
+    }
+
+    private String displayHandicapMethod(String method) {
+        if (method == null || method.trim().isEmpty()) {
+            return "Trip";
+        }
+
+        String normalized = method.trim().toUpperCase();
+        if ("MYRTLE_BEACH".equals(normalized) || "DB_SCORE_HISTORY".equals(normalized)) {
+            return "DB Score History";
+        }
+        if ("GHIN".equals(normalized)) {
+            return "GHIN";
+        }
+
+        return method.trim();
+    }
+
 }

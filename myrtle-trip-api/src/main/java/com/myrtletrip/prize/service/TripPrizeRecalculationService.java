@@ -19,11 +19,12 @@ import com.myrtletrip.round.entity.RoundTeamPlayer;
 import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
-import com.myrtletrip.standings.dto.FourDayStandingRowResponse;
-import com.myrtletrip.standings.dto.FourDayStandingsResponse;
-import com.myrtletrip.standings.service.FourDayStandingsService;
+import com.myrtletrip.standings.dto.TournamentStandingRowResponse;
+import com.myrtletrip.standings.dto.TournamentStandingsResponse;
+import com.myrtletrip.standings.service.TournamentStandingsService;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.repository.TripRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
@@ -41,7 +42,7 @@ import java.util.Map;
 @Service
 public class TripPrizeRecalculationService {
 
-    private static final String FOUR_DAY_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
+    private static final String TOURNAMENT_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
 
     private final TripRepository tripRepository;
     private final PrizeScheduleRepository prizeScheduleRepository;
@@ -49,10 +50,11 @@ public class TripPrizeRecalculationService {
     private final RoundGameScoringService roundGameScoringService;
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final ScorecardRepository scorecardRepository;
-    private final FourDayStandingsService fourDayStandingsService;
+    private final TournamentStandingsService tournamentStandingsService;
     private final TripPrizeService tripPrizeService;
     private final TripPlayerPayoutStatusRepository tripPlayerPayoutStatusRepository;
     private final EntityManager entityManager;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public TripPrizeRecalculationService(TripRepository tripRepository,
                                          PrizeScheduleRepository prizeScheduleRepository,
@@ -60,26 +62,29 @@ public class TripPrizeRecalculationService {
                                          RoundGameScoringService roundGameScoringService,
                                          RoundTeamPlayerRepository roundTeamPlayerRepository,
                                          ScorecardRepository scorecardRepository,
-                                         FourDayStandingsService fourDayStandingsService,
+                                         TournamentStandingsService tournamentStandingsService,
                                          TripPrizeService tripPrizeService,
                                          TripPlayerPayoutStatusRepository tripPlayerPayoutStatusRepository,
-                                         EntityManager entityManager) {
+                                         EntityManager entityManager,
+                                         TripEditingGuardService tripEditingGuardService) {
         this.tripRepository = tripRepository;
         this.prizeScheduleRepository = prizeScheduleRepository;
         this.prizeWinningRepository = prizeWinningRepository;
         this.roundGameScoringService = roundGameScoringService;
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.scorecardRepository = scorecardRepository;
-        this.fourDayStandingsService = fourDayStandingsService;
+        this.tournamentStandingsService = tournamentStandingsService;
         this.tripPrizeService = tripPrizeService;
         this.tripPlayerPayoutStatusRepository = tripPlayerPayoutStatusRepository;
         this.entityManager = entityManager;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
     public PrizeRecalculationResponse recalculate(Long tripId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
+        tripEditingGuardService.assertCorrectionAllowed(trip);
 
         tripPrizeService.getPrizeSchedules(tripId);
 
@@ -94,8 +99,8 @@ public class TripPrizeRecalculationService {
                 continue;
             }
 
-            if (FOUR_DAY_GAME_KEY.equals(schedule.getGameKey())) {
-                winnings.addAll(calculateFourDayWinnings(trip, schedule));
+            if (TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
+                winnings.addAll(calculateTournamentWinnings(trip, schedule));
             } else if (schedule.getRound() != null) {
                 winnings.addAll(calculateRoundWinnings(trip, schedule));
             }
@@ -138,15 +143,15 @@ public class TripPrizeRecalculationService {
         return getCurrentWinnings(tripId);
     }
 
-    private List<PrizeWinning> calculateFourDayWinnings(Trip trip, PrizeSchedule schedule) {
-        FourDayStandingsResponse standings = fourDayStandingsService.getFourDayStandings(trip.getId());
+    private List<PrizeWinning> calculateTournamentWinnings(Trip trip, PrizeSchedule schedule) {
+        TournamentStandingsResponse standings = tournamentStandingsService.getTournamentStandings(trip.getId());
         List<PrizeUnit> units = new ArrayList<PrizeUnit>();
 
         if (!Boolean.TRUE.equals(standings.getLeaderboardFinal())) {
             return new ArrayList<PrizeWinning>();
         }
 
-        for (FourDayStandingRowResponse row : standings.getRows()) {
+        for (TournamentStandingRowResponse row : standings.getRows()) {
             if (row.getPosition() == null || row.getPlayerId() == null) {
                 continue;
             }
@@ -340,11 +345,8 @@ public class TripPrizeRecalculationService {
             }
         }
 
-        BigDecimal totalAmount = BigDecimal.ZERO;
-
         for (PrizeWinning winning : winnings) {
             BigDecimal amount = winning.getAmount() == null ? BigDecimal.ZERO : winning.getAmount();
-            totalAmount = totalAmount.add(amount);
 
             PrizeWinningResponse winningResponse = new PrizeWinningResponse();
             winningResponse.setWinningId(winning.getId());
@@ -385,19 +387,33 @@ public class TripPrizeRecalculationService {
         }
 
         List<PrizePlayerTotalResponse> playerTotals = new ArrayList<PrizePlayerTotalResponse>(totalByPlayerId.values());
+        BigDecimal totalWholeDollarAmount = BigDecimal.ZERO;
+        for (PrizePlayerTotalResponse playerTotal : playerTotals) {
+            BigDecimal wholeDollarTotal = truncateToWholeDollars(playerTotal.getTotalAmount());
+            playerTotal.setTotalAmount(wholeDollarTotal);
+            totalWholeDollarAmount = totalWholeDollarAmount.add(wholeDollarTotal);
+        }
+
         playerTotals.sort(
                 Comparator.comparing(PrizePlayerTotalResponse::getTotalAmount, Comparator.reverseOrder())
                         .thenComparing(PrizePlayerTotalResponse::getPlayerName, String.CASE_INSENSITIVE_ORDER)
         );
 
-        response.setTotalAmount(totalAmount);
+        response.setTotalAmount(totalWholeDollarAmount);
         response.setWinnings(winningResponses);
         response.setPlayerTotals(playerTotals);
         return response;
     }
 
+    private BigDecimal truncateToWholeDollars(BigDecimal amount) {
+        if (amount == null) {
+            return BigDecimal.ZERO;
+        }
+        return amount.setScale(0, RoundingMode.DOWN);
+    }
+
     private Integer sortValue(PrizeSchedule schedule) {
-        if (FOUR_DAY_GAME_KEY.equals(schedule.getGameKey())) {
+        if (TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
             return 0;
         }
         if (schedule.getRound() != null && schedule.getRound().getRoundNumber() != null) {

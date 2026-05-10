@@ -5,6 +5,10 @@ import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.service.RoundTeeResolver;
 import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.trip.entity.Trip;
+import com.myrtletrip.trip.entity.TripPlayer;
+import com.myrtletrip.trip.model.TripHandicapMethod;
+import com.myrtletrip.trip.repository.TripPlayerRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +21,16 @@ public class RoundHandicapService {
     private final TripHandicapService tripHandicapService;
     private final CourseHandicapService courseHandicapService;
     private final RoundTeeResolver roundTeeResolver;
+    private final TripPlayerRepository tripPlayerRepository;
 
     public RoundHandicapService(TripHandicapService tripHandicapService,
                                 CourseHandicapService courseHandicapService,
-                                RoundTeeResolver roundTeeResolver) {
+                                RoundTeeResolver roundTeeResolver,
+                                TripPlayerRepository tripPlayerRepository) {
         this.tripHandicapService = tripHandicapService;
         this.courseHandicapService = courseHandicapService;
         this.roundTeeResolver = roundTeeResolver;
+        this.tripPlayerRepository = tripPlayerRepository;
     }
 
     public BigDecimal calculateTripIndex(Scorecard scorecard, String handicapGroupCode) {
@@ -37,7 +44,26 @@ public class RoundHandicapService {
         if (player == null) throw new IllegalArgumentException("scorecard.player is required");
         if (round.getRoundDate() == null) throw new IllegalArgumentException("round.roundDate is required");
 
-        return tripHandicapService.calculateTripIndexAsOf(player, handicapGroupCode, round.getRoundDate());
+        Trip trip = round.getTrip();
+        if (trip == null) throw new IllegalArgumentException("round.trip is required");
+
+        if (trip.getHandicapsEnabled() != null && !Boolean.TRUE.equals(trip.getHandicapsEnabled())) {
+            return BigDecimal.ZERO;
+        }
+
+        if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
+            TripPlayer tripPlayer = tripPlayerRepository.findByTrip_IdAndPlayer_Id(trip.getId(), player.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Trip player not found for trip "
+                            + trip.getId() + " and player " + player.getId()));
+
+            if (tripPlayer.getFrozenHandicapIndex() == null) {
+                throw new IllegalStateException("Frozen GHIN handicap index is required for " + player.getDisplayName());
+            }
+
+            return tripPlayer.getFrozenHandicapIndex();
+        }
+
+        return tripHandicapService.calculateTripIndexAsOf(player, handicapGroupCode, round.getRoundDate(), trip.getHandicapMethod());
     }
 
     public Integer calculateCourseHandicap(Scorecard scorecard, String handicapGroupCode) {
@@ -47,7 +73,8 @@ public class RoundHandicapService {
         BigDecimal tripIndex = calculateTripIndex(scorecard, handicapGroupCode);
         if (tripIndex == null) return null;
 
-        return courseHandicapService.calculateCourseHandicap(tripIndex, roundTee);
+        String gender = scorecard.getPlayer() == null ? "M" : scorecard.getPlayer().getGender();
+        return courseHandicapService.calculateCourseHandicap(tripIndex, roundTee, gender);
     }
 
     public Integer calculatePlayingHandicap(Scorecard scorecard, String handicapGroupCode) {

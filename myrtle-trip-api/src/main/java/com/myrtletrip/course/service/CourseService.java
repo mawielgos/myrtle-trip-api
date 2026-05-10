@@ -147,6 +147,17 @@ public class CourseService {
         }
 
         List<CourseTee> tees = courseTeeRepository.findByCourse_IdAndActiveTrueOrderByTeeNameAscEffectiveDateDesc(courseId);
+        tees.sort((a, b) -> {
+            double left = a.getCourseRating() == null ? -999.0 : a.getCourseRating().doubleValue();
+            double right = b.getCourseRating() == null ? -999.0 : b.getCourseRating().doubleValue();
+            int ratingCompare = Double.compare(right, left);
+            if (ratingCompare != 0) {
+                return ratingCompare;
+            }
+            String leftName = a.getTeeName() == null ? "" : a.getTeeName().toLowerCase();
+            String rightName = b.getTeeName() == null ? "" : b.getTeeName().toLowerCase();
+            return leftName.compareTo(rightName);
+        });
         List<CourseTeeListResponse> responses = new ArrayList<>();
 
         for (CourseTee tee : tees) {
@@ -721,7 +732,20 @@ public class CourseService {
         response.setWomenCourseRating(tee.getWomenCourseRating());
         response.setWomenSlope(tee.getWomenSlope());
         response.setWomenParTotal(tee.getWomenParTotal());
+        response.setHoleCount(resolvedHoleCountForList(tee));
         return response;
+    }
+
+    private Long resolvedHoleCountForList(CourseTee tee) {
+        if (tee == null || tee.getId() == null) {
+            return 0L;
+        }
+
+        if (!isComboTee(tee)) {
+            return courseHoleRepository.countByCourseTee_Id(tee.getId());
+        }
+
+        return courseTeeComboHoleRepository.countByComboTee_Id(tee.getId());
     }
 
     private CourseTeeResponse toCourseTeeResponse(CourseTee tee) {

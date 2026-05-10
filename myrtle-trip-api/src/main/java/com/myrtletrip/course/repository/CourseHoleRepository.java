@@ -13,6 +13,8 @@ public interface CourseHoleRepository extends JpaRepository<CourseHole, Long> {
 
     Optional<CourseHole> findByCourseTee_IdAndHoleNumber(Long courseTeeId, Integer holeNumber);
 
+    long countByCourseTee_Id(Long courseTeeId);
+
     @Transactional
     void deleteByCourseTee_Id(Long courseTeeId);
 }

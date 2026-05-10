@@ -4,6 +4,7 @@ import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.player.repository.PlayerRepository;
 import com.myrtletrip.scorehistory.entity.ScoreHistoryEntry;
 import com.myrtletrip.scorehistory.repository.ScoreHistoryEntryRepository;
+import com.myrtletrip.trip.model.TripHandicapMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,9 +23,10 @@ public class TripHandicapService {
 
     private static final String HANDICAP_METHOD_GHIN = "GHIN";
     private static final String HANDICAP_METHOD_MYRTLE_BEACH = "MYRTLE_BEACH";
+    private static final String HANDICAP_METHOD_DB_SCORE_HISTORY = "DB_SCORE_HISTORY";
 
     private static final String SOURCE_GHIN_FROZEN = "GHIN_FROZEN";
-    private static final String SOURCE_MYRTLE_FROZEN = "MYRTLE_FROZEN";
+    private static final String SOURCE_DB_HISTORY_FROZEN = "DB_HISTORY_FROZEN";
     private static final String SOURCE_TRIP_ROUND = "TRIP_ROUND";
 
     private final PlayerRepository playerRepository;
@@ -60,6 +62,47 @@ public class TripHandicapService {
         }).toList();
     }
 
+
+    public BigDecimal calculateTripIndex(Player player, String handicapGroupCode, TripHandicapMethod tripHandicapMethod) {
+        validateInputs(player, handicapGroupCode);
+
+        TripHandicapMethod effectiveMethod = tripHandicapMethod == null
+                ? TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY
+                : tripHandicapMethod;
+
+        if (TripHandicapMethod.GHIN_HISTORY.equals(effectiveMethod)) {
+            return calculateGhinTripIndex(player, handicapGroupCode);
+        }
+
+        if (TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY.equals(effectiveMethod)) {
+            return calculateCombinedGhinAndDbScoreHistoryTripIndex(player, handicapGroupCode);
+        }
+
+        throw new IllegalStateException("Unsupported non-frozen trip handicap method: " + effectiveMethod);
+    }
+
+    public BigDecimal calculateTripIndexAsOf(Player player, String handicapGroupCode, LocalDate asOfDate, TripHandicapMethod tripHandicapMethod) {
+        validateInputs(player, handicapGroupCode);
+
+        if (asOfDate == null) {
+            throw new IllegalArgumentException("asOfDate is required");
+        }
+
+        TripHandicapMethod effectiveMethod = tripHandicapMethod == null
+                ? TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY
+                : tripHandicapMethod;
+
+        if (TripHandicapMethod.GHIN_HISTORY.equals(effectiveMethod)) {
+            return calculateGhinTripIndexAsOf(player, handicapGroupCode, asOfDate);
+        }
+
+        if (TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY.equals(effectiveMethod)) {
+            return calculateCombinedGhinAndDbScoreHistoryTripIndexAsOf(player, handicapGroupCode, asOfDate);
+        }
+
+        throw new IllegalStateException("Unsupported non-frozen trip handicap method: " + effectiveMethod);
+    }
+
     public BigDecimal calculateTripIndex(Long playerId, String handicapGroupCode) {
         Player player = playerRepository.findById(playerId)
                 .orElseThrow(() -> new IllegalArgumentException("Player not found: " + playerId));
@@ -76,8 +119,8 @@ public class TripHandicapService {
             return calculateGhinTripIndex(player, handicapGroupCode);
         }
 
-        if (HANDICAP_METHOD_MYRTLE_BEACH.equals(handicapMethod)) {
-            return calculateMyrtleBeachTripIndex(player, handicapGroupCode);
+        if (isDbScoreHistoryMethod(handicapMethod)) {
+            return calculateDbScoreHistoryTripIndex(player, handicapGroupCode);
         }
 
         throw new IllegalStateException("Unsupported handicap method for player "
@@ -104,8 +147,8 @@ public class TripHandicapService {
             return calculateGhinTripIndexAsOf(player, handicapGroupCode, asOfDate);
         }
 
-        if (HANDICAP_METHOD_MYRTLE_BEACH.equals(handicapMethod)) {
-            return calculateMyrtleBeachTripIndexAsOf(player, handicapGroupCode, asOfDate);
+        if (isDbScoreHistoryMethod(handicapMethod)) {
+            return calculateDbScoreHistoryTripIndexAsOf(player, handicapGroupCode, asOfDate);
         }
 
         throw new IllegalStateException("Unsupported handicap method for player "
@@ -154,10 +197,10 @@ public class TripHandicapService {
         return calculateWhsIndexFromDifferentials(newestTwentyDifferentials);
     }
 
-    public BigDecimal calculateMyrtleBeachTripIndex(Player player, String handicapGroupCode) {
+    public BigDecimal calculateDbScoreHistoryTripIndex(Player player, String handicapGroupCode) {
         validateInputs(player, handicapGroupCode);
 
-        List<BigDecimal> newestSixDifferentials = loadMyrtleBeachEligibleEntries(player, handicapGroupCode).stream()
+        List<BigDecimal> newestSixDifferentials = loadDbScoreHistoryEligibleEntries(player, handicapGroupCode).stream()
                 .filter(e -> e.getDifferential() != null)
                 .sorted(Comparator.comparing(ScoreHistoryEntry::getScoreDate).reversed()
                         .thenComparing(ScoreHistoryEntry::getId, Comparator.reverseOrder()))
@@ -166,13 +209,13 @@ public class TripHandicapService {
                 .sorted()
                 .toList();
 
-        return calculateMyrtleBeachIndexFromDifferentials(newestSixDifferentials);
+        return calculateDbScoreHistoryIndexFromDifferentials(newestSixDifferentials);
     }
 
-    public BigDecimal calculateMyrtleBeachTripIndexAsOf(Player player, String handicapGroupCode, LocalDate asOfDate) {
+    public BigDecimal calculateDbScoreHistoryTripIndexAsOf(Player player, String handicapGroupCode, LocalDate asOfDate) {
         validateInputs(player, handicapGroupCode);
 
-        List<BigDecimal> newestSixDifferentials = loadMyrtleBeachEligibleEntries(player, handicapGroupCode).stream()
+        List<BigDecimal> newestSixDifferentials = loadDbScoreHistoryEligibleEntries(player, handicapGroupCode).stream()
                 .filter(e -> e.getDifferential() != null)
                 .filter(e -> isEligibleAsOf(e, asOfDate))
                 .sorted(Comparator.comparing(ScoreHistoryEntry::getScoreDate).reversed()
@@ -182,12 +225,55 @@ public class TripHandicapService {
                 .sorted()
                 .toList();
 
-        return calculateMyrtleBeachIndexFromDifferentials(newestSixDifferentials);
+        return calculateDbScoreHistoryIndexFromDifferentials(newestSixDifferentials);
     }
 
-    private List<ScoreHistoryEntry> loadMyrtleBeachEligibleEntries(Player player, String handicapGroupCode) {
+
+    public BigDecimal calculateCombinedGhinAndDbScoreHistoryTripIndex(Player player, String handicapGroupCode) {
+        validateInputs(player, handicapGroupCode);
+
+        List<BigDecimal> newestTwentyDifferentials = loadCombinedGhinAndDbScoreHistoryEligibleEntries(player, handicapGroupCode).stream()
+                .filter(e -> e.getDifferential() != null)
+                .sorted(this::compareForGhinTripOrder)
+                .limit(20)
+                .map(ScoreHistoryEntry::getDifferential)
+                .toList();
+
+        return calculateWhsIndexFromDifferentials(newestTwentyDifferentials);
+    }
+
+    public BigDecimal calculateCombinedGhinAndDbScoreHistoryTripIndexAsOf(Player player, String handicapGroupCode, LocalDate asOfDate) {
+        validateInputs(player, handicapGroupCode);
+
+        List<BigDecimal> newestTwentyDifferentials = loadCombinedGhinAndDbScoreHistoryEligibleEntries(player, handicapGroupCode).stream()
+                .filter(e -> e.getDifferential() != null)
+                .filter(e -> isEligibleAsOf(e, asOfDate))
+                .sorted(this::compareForGhinTripOrder)
+                .limit(20)
+                .map(ScoreHistoryEntry::getDifferential)
+                .toList();
+
+        return calculateWhsIndexFromDifferentials(newestTwentyDifferentials);
+    }
+
+    private List<ScoreHistoryEntry> loadCombinedGhinAndDbScoreHistoryEligibleEntries(Player player, String handicapGroupCode) {
+        List<ScoreHistoryEntry> ghinAndTripEntries = scoreHistoryEntryRepository
+                .findByPlayerAndHandicapGroupCodeAndSourceTypeIn(
+                        player,
+                        handicapGroupCode,
+                        Set.of(SOURCE_GHIN_FROZEN, SOURCE_TRIP_ROUND)
+                );
+
+        List<ScoreHistoryEntry> dbHistoryEntries = scoreHistoryEntryRepository
+                .findByPlayerAndSourceTypeIn(player, Set.of(SOURCE_DB_HISTORY_FROZEN));
+
+        return Stream.concat(ghinAndTripEntries.stream(), dbHistoryEntries.stream())
+                .toList();
+    }
+
+    private List<ScoreHistoryEntry> loadDbScoreHistoryEligibleEntries(Player player, String handicapGroupCode) {
         List<ScoreHistoryEntry> frozenEntries = scoreHistoryEntryRepository
-                .findByPlayerAndSourceTypeIn(player, Set.of(SOURCE_MYRTLE_FROZEN));
+                .findByPlayerAndSourceTypeIn(player, Set.of(SOURCE_DB_HISTORY_FROZEN));
 
         List<ScoreHistoryEntry> tripRoundEntries = scoreHistoryEntryRepository
                 .findByPlayerAndHandicapGroupCodeAndSourceTypeIn(
@@ -290,7 +376,7 @@ public class TripHandicapService {
         return sum.divide(BigDecimal.valueOf(lowestDifferentials.size()), 1, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateMyrtleBeachIndexFromDifferentials(List<BigDecimal> differentials) {
+    private BigDecimal calculateDbScoreHistoryIndexFromDifferentials(List<BigDecimal> differentials) {
         int count = differentials.size();
         if (count == 0) {
             return null;
@@ -327,6 +413,11 @@ public class TripHandicapService {
     private boolean isEligibleAsOf(ScoreHistoryEntry entry, LocalDate asOfDate) {
         LocalDate scoreDate = entry.getScoreDate();
         return scoreDate != null && scoreDate.isBefore(asOfDate);
+    }
+
+    private boolean isDbScoreHistoryMethod(String handicapMethod) {
+        return HANDICAP_METHOD_DB_SCORE_HISTORY.equals(handicapMethod)
+                || HANDICAP_METHOD_MYRTLE_BEACH.equals(handicapMethod);
     }
 
     private void validateInputs(Player player, String handicapGroupCode) {

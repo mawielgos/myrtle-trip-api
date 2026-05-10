@@ -9,6 +9,7 @@ public class RoundScrambleTeamScoreResponse {
     private Integer teamNumber;
     private String teamName;
     private Integer totalScore;
+    private List<String> playerNames = new ArrayList<>();
     private List<Integer> holes = new ArrayList<>();
 
     public Long getRoundTeamId() {
@@ -41,6 +42,14 @@ public class RoundScrambleTeamScoreResponse {
 
     public void setTotalScore(Integer totalScore) {
         this.totalScore = totalScore;
+    }
+
+    public List<String> getPlayerNames() {
+        return playerNames;
+    }
+
+    public void setPlayerNames(List<String> playerNames) {
+        this.playerNames = playerNames;
     }
 
     public List<Integer> getHoles() {

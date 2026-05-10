@@ -213,6 +213,14 @@ public class RoundReadinessService {
             return twoManGroupsReady;
         }
 
+        if (format == RoundFormat.TEAM_SCRAMBLE) {
+            boolean groupingValid = !calculateNeedsGrouping(scorecards, groups);
+            if (!groupingValid) {
+                blockingIssues.add("Scramble tee-sheet groups are incomplete. Save Scramble teams to auto-create one tee-sheet group per Scramble team.");
+            }
+            return groupingValid;
+        }
+
         boolean groupingValid = !calculateNeedsGrouping(scorecards, groups);
         if (!groupingValid) {
             blockingIssues.add("Tee-sheet groups are incomplete. Every player must be assigned to exactly one group, with no more than 4 players per group.");
@@ -244,11 +252,12 @@ public class RoundReadinessService {
             return twoManTeamsReady;
         }
 
-        boolean fourManTeamsReady = !calculateNeedsTeams(round, scorecards, teams);
-        if (!fourManTeamsReady) {
-            blockingIssues.add("Competition teams are incomplete. For this format, each tee-sheet group is also the competition team and must contain 4 players.");
+        int expectedTeamSize = resolveExpectedTeamSize(round);
+        boolean teamsReady = !calculateNeedsTeams(round, scorecards, teams);
+        if (!teamsReady) {
+            blockingIssues.add("Competition teams are incomplete. For this format, each team must contain " + expectedTeamSize + " players.");
         }
-        return fourManTeamsReady;
+        return teamsReady;
     }
 
     private boolean twoManTeamPairsReady(List<Scorecard> scorecards, List<RoundTeam> teams) {
@@ -369,6 +378,14 @@ public class RoundReadinessService {
         return groupedPlayerIds.size() != roundPlayerIds.size();
     }
 
+    private int resolveExpectedTeamSize(Round round) {
+        if (round != null && round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+            Integer size = round.getScrambleTeamSize();
+            return size == null || size < 1 ? 4 : size;
+        }
+        return round == null || round.getFormat() == null ? 4 : round.getFormat().expectedTeamSize();
+    }
+
     private boolean calculateNeedsTeams(Round round, List<Scorecard> scorecards, List<RoundTeam> teams) {
         RoundFormat format = round.getFormat();
 
@@ -384,7 +401,7 @@ public class RoundReadinessService {
             return true;
         }
 
-        int expectedTeamSize = format.expectedTeamSize();
+        int expectedTeamSize = resolveExpectedTeamSize(round);
         Map<Long, Integer> teamCounts = new HashMap<>();
         Set<Long> knownTeamIds = new HashSet<>();
 

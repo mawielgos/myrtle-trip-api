@@ -9,6 +9,7 @@ import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.service.ScoringService;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,23 +23,28 @@ public class ScorecardHandicapService {
     private final RoundHandicapService roundHandicapService;
     private final ScoringService scoringService;
     private final RoundTeeResolver roundTeeResolver;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public ScorecardHandicapService(ScorecardRepository scorecardRepository,
                                     RoundTeeRepository roundTeeRepository,
                                     RoundHandicapService roundHandicapService,
                                     ScoringService scoringService,
-                                    RoundTeeResolver roundTeeResolver) {
+                                    RoundTeeResolver roundTeeResolver,
+                                    TripEditingGuardService tripEditingGuardService) {
         this.scorecardRepository = scorecardRepository;
         this.roundTeeRepository = roundTeeRepository;
         this.roundHandicapService = roundHandicapService;
         this.scoringService = scoringService;
         this.roundTeeResolver = roundTeeResolver;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
     public void setScorecardTee(Long scorecardId, Long roundTeeId) {
         Scorecard scorecard = scorecardRepository.findById(scorecardId)
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found: " + scorecardId));
+
+        tripEditingGuardService.assertCorrectionAllowedForRound(scorecard.getRound());
 
         RoundTee roundTee = roundTeeRepository.findById(roundTeeId)
                 .orElseThrow(() -> new IllegalArgumentException("Round tee not found: " + roundTeeId));
@@ -48,26 +54,17 @@ public class ScorecardHandicapService {
         scoringService.recalculate(scorecardId);
     }
 
-    /** Legacy endpoint support. False resets to default tee; true is rejected because alternate tee is retired. */
-    @Transactional
-    public void setAlternateTee(Long scorecardId, boolean useAlternateTee) {
-        Scorecard scorecard = scorecardRepository.findById(scorecardId)
-                .orElseThrow(() -> new IllegalArgumentException("Scorecard not found: " + scorecardId));
-
-        if (useAlternateTee) {
-            throw new IllegalStateException("Alternate tee is no longer a round-level setting. Select a player tee instead.");
-        }
-
-        setRoundTeeAndRefreshHandicap(scorecard, scorecard.getRound().getDefaultRoundTee());
-        scorecardRepository.save(scorecard);
-        scoringService.recalculate(scorecardId);
-    }
-
     @Transactional
     public void applyTeeCorrections(Long roundId, List<RoundTeeCorrectionRequest> corrections) {
         if (corrections == null || corrections.isEmpty()) {
             return;
         }
+
+        List<Scorecard> roundScorecards = scorecardRepository.findByRound_Id(roundId);
+        if (roundScorecards.isEmpty()) {
+            throw new IllegalArgumentException("Round not found or has no scorecards: " + roundId);
+        }
+        tripEditingGuardService.assertCorrectionAllowedForRound(roundScorecards.get(0).getRound());
 
         for (RoundTeeCorrectionRequest correction : corrections) {
             if (correction == null || correction.getScorecardId() == null) {
@@ -83,16 +80,21 @@ public class ScorecardHandicapService {
             }
 
             Long requestedRoundTeeId = correction.getRoundTeeId();
-            Long effectiveRoundTeeId = requestedRoundTeeId;
-            if (effectiveRoundTeeId == null && scorecard.getRound().getDefaultRoundTee() != null) {
-                effectiveRoundTeeId = scorecard.getRound().getDefaultRoundTee().getId();
-            }
-            if (effectiveRoundTeeId == null) {
-                throw new IllegalArgumentException("roundTeeId is required for scorecard " + correction.getScorecardId());
+
+            // A null tee in a correction payload means "no tee change".  Do not silently
+            // reset the player to the round default tee; that can corrupt finalized-round
+            // corrections when the UI is only saving score changes.
+            if (requestedRoundTeeId == null) {
+                continue;
             }
 
-            RoundTee roundTee = roundTeeRepository.findById(effectiveRoundTeeId)
-                    .orElseThrow(() -> new IllegalArgumentException("Round tee not found"));
+            Long currentRoundTeeId = scorecard.getRoundTee() == null ? null : scorecard.getRoundTee().getId();
+            if (requestedRoundTeeId.equals(currentRoundTeeId)) {
+                continue;
+            }
+
+            RoundTee roundTee = roundTeeRepository.findById(requestedRoundTeeId)
+                    .orElseThrow(() -> new IllegalArgumentException("Round tee not found: " + requestedRoundTeeId));
             setRoundTeeAndRefreshHandicap(scorecard, roundTee);
             scorecardRepository.save(scorecard);
         }
@@ -130,7 +132,7 @@ public class ScorecardHandicapService {
                 scorecard.setRoundTee(scorecard.getRound().getDefaultRoundTee());
             }
 
-            refreshHandicaps(scorecard);
+            refreshHandicaps(scorecard, !allowFinalized);
             scorecardRepository.save(scorecard);
             scoringService.recalculate(scorecard.getId());
         }
@@ -148,10 +150,21 @@ public class ScorecardHandicapService {
                 || !targetRoundTee.getRound().getId().equals(round.getId())) {
             throw new IllegalArgumentException("Selected tee does not belong to this round");
         }
+        if (targetRoundTee.getSourceCourseTee() != null
+                && targetRoundTee.getSourceCourseTee().getCourse() != null
+                && targetRoundTee.getSourceCourseTee().getCourse().getId() != null
+                && round.getCourse() != null
+                && round.getCourse().getId() != null
+                && !targetRoundTee.getSourceCourseTee().getCourse().getId().equals(round.getCourse().getId())) {
+            throw new IllegalArgumentException(
+                    "Selected tee " + targetRoundTee.getTeeName()
+                            + " is linked to a different course than this round"
+            );
+        }
 
         validateRoundTeeEligibilityForPlayer(scorecard, targetRoundTee);
         scorecard.setRoundTee(targetRoundTee);
-        refreshHandicaps(scorecard);
+        refreshHandicaps(scorecard, false);
     }
 
     private void validateRoundTeeEligibilityForPlayer(Scorecard scorecard, RoundTee targetRoundTee) {
@@ -165,11 +178,16 @@ public class ScorecardHandicapService {
         if (targetRoundTee.getSourceCourseTee() == null) {
             return;
         }
-        if (!targetRoundTee.getSourceCourseTee().isEligibleForGender(player.getGender())) {
+        String normalizedGender = normalizeGender(player.getGender());
+        // The database stores one round_tee row per source course tee. A row may carry
+        // the men's snapshot values while the source CourseTee also has women's
+        // rating/slope/par. Do not require the round_tee snapshot to match the player's
+        // gender; validate against the source CourseTee eligibility instead.
+        if (!targetRoundTee.getSourceCourseTee().isEligibleForGender(normalizedGender)) {
             throw new IllegalArgumentException(
                     "Tee " + targetRoundTee.getTeeName()
                             + " is not eligible for " + player.getDisplayName()
-                            + " (gender " + normalizeGender(player.getGender()) + ")"
+                            + " (gender " + normalizedGender + ")"
             );
         }
     }
@@ -182,9 +200,21 @@ public class ScorecardHandicapService {
     }
 
     private void refreshHandicaps(Scorecard scorecard) {
+        refreshHandicaps(scorecard, true);
+    }
+
+    private void refreshHandicaps(Scorecard scorecard, boolean validateExistingAssignedTee) {
         RoundTee resolvedTee = roundTeeResolver.resolve(scorecard);
         scorecard.setRoundTee(resolvedTee);
-        validateRoundTeeEligibilityForPlayer(scorecard, resolvedTee);
+
+        // For a tee CHANGE, validation is done before this method is called.
+        // For a finalized-round score-only correction, the existing round_tee snapshot
+        // is authoritative and should not be re-validated against current Course Master
+        // gender eligibility/rating data. Re-validating existing snapshots can reject
+        // old finalized scorecards after Course Master tee data changes.
+        if (validateExistingAssignedTee) {
+            validateRoundTeeEligibilityForPlayer(scorecard, resolvedTee);
+        }
 
         Round round = scorecard.getRound();
         String handicapGroupCode = round.getTrip().getTripCode();

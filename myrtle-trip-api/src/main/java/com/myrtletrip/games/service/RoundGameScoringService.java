@@ -12,6 +12,7 @@ import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,17 +30,20 @@ public class RoundGameScoringService {
     private final ScorecardRepository scorecardRepository;
     private final HoleScoreRepository holeScoreRepository;
     private final List<RoundGameScorer> scorerList;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundGameScoringService(RoundRepository roundRepository,
                                    RoundScoringDataService roundScoringDataService,
                                    ScorecardRepository scorecardRepository,
                                    HoleScoreRepository holeScoreRepository,
-                                   List<RoundGameScorer> scorerList) {
+                                   List<RoundGameScorer> scorerList,
+                                   TripEditingGuardService tripEditingGuardService) {
         this.roundRepository = roundRepository;
         this.roundScoringDataService = roundScoringDataService;
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
         this.scorerList = scorerList;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional(readOnly = true)
@@ -58,6 +62,7 @@ public class RoundGameScoringService {
     @Transactional
     public RoundGameResult recalculateRound(Long roundId) {
         Round round = loadRound(roundId);
+        tripEditingGuardService.assertCorrectionAllowedForRound(round);
         RoundScoringData data = roundScoringDataService.build(round);
 
         clearUsedHoleScoreFlags(round);

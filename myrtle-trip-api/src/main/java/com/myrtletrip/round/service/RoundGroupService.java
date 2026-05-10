@@ -7,6 +7,7 @@ import com.myrtletrip.round.dto.RoundGroupAssignmentRequest;
 import com.myrtletrip.round.dto.RoundGroupPageResponse;
 import com.myrtletrip.round.dto.RoundGroupPlayerResponse;
 import com.myrtletrip.round.dto.RoundGroupResponse;
+import com.myrtletrip.round.dto.RoundGroupTeeTimeRequest;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundGroup;
 import com.myrtletrip.round.entity.RoundGroupPlayer;
@@ -17,6 +18,7 @@ import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -28,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalTime;
 
 @Service
 @Transactional
@@ -42,6 +45,7 @@ public class RoundGroupService {
     private final RoundTeeProvisioningService roundTeeProvisioningService;
     private final RoundTeamAutoAssignmentService roundTeamAutoAssignmentService;
     private final RoundGroupAutoAssignmentService roundGroupAutoAssignmentService;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundGroupService(
             RoundRepository roundRepository,
@@ -52,7 +56,8 @@ public class RoundGroupService {
             RoundTeeRepository roundTeeRepository,
             RoundTeeProvisioningService roundTeeProvisioningService,
             RoundTeamAutoAssignmentService roundTeamAutoAssignmentService,
-            RoundGroupAutoAssignmentService roundGroupAutoAssignmentService
+            RoundGroupAutoAssignmentService roundGroupAutoAssignmentService,
+            TripEditingGuardService tripEditingGuardService
     ) {
         this.roundRepository = roundRepository;
         this.roundGroupRepository = roundGroupRepository;
@@ -63,22 +68,29 @@ public class RoundGroupService {
         this.roundTeeProvisioningService = roundTeeProvisioningService;
         this.roundTeamAutoAssignmentService = roundTeamAutoAssignmentService;
         this.roundGroupAutoAssignmentService = roundGroupAutoAssignmentService;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
     public RoundGroupPageResponse getRoundGroups(Long roundId) {
         Round round = getRoundOrThrow(roundId);
+
+        // This is a read/view endpoint used by scoring, correction mode, and the round progress bar.
+        // Completed trips must still be able to load their existing group data. Structural locking
+        // belongs in save/update paths, not read paths.
         roundTeeProvisioningService.ensureRoundTeeOptions(round);
 
         List<RoundGroup> groups;
 
         if (round.getFormat() == RoundFormat.TWO_MAN_LOW_NET) {
-            roundGroupAutoAssignmentService.syncGroupsFromTeamsIfNeeded(roundId);
+            if (!Boolean.TRUE.equals(round.getFinalized())) {
+                roundGroupAutoAssignmentService.syncGroupsFromTeamsIfNeeded(roundId);
+            }
             groups = roundGroupRepository.findByRound_IdOrderByGroupNumberAsc(roundId);
         } else {
             groups = roundGroupRepository.findByRound_IdOrderByGroupNumberAsc(roundId);
 
-            if (groups.isEmpty()) {
+            if (groups.isEmpty() && !Boolean.TRUE.equals(round.getFinalized())) {
                 groups = initializeGroups(round);
             }
         }
@@ -96,6 +108,7 @@ public class RoundGroupService {
 
     public RoundGroupPageResponse saveRoundGroups(Long roundId, RoundGroupAssignmentRequest request) {
         Round round = getRoundOrThrow(roundId);
+        tripEditingGuardService.assertStructureEditable(round.getTrip());
         roundTeeProvisioningService.ensureRoundTeeOptions(round);
         validateRequest(request, round);
 
@@ -112,6 +125,7 @@ public class RoundGroupService {
         Map<Long, Player> playersById = loadPlayers(request);
         Map<Long, Scorecard> scorecardsById = loadScorecardsForRound(roundId);
         Map<Integer, List<RoundGroupAssignmentItemRequest>> groupedAssignments = new HashMap<>();
+        Map<Integer, LocalTime> teeTimesByGroupNumber = buildTeeTimesByGroupNumber(request);
 
         for (RoundGroupAssignmentItemRequest item : request.getAssignments()) {
             groupedAssignments
@@ -128,6 +142,7 @@ public class RoundGroupService {
             RoundGroup roundGroup = new RoundGroup();
             roundGroup.setRound(round);
             roundGroup.setGroupNumber(groupNumber);
+            roundGroup.setTeeTime(teeTimesByGroupNumber.get(groupNumber));
 
             List<RoundGroupAssignmentItemRequest> items = groupedAssignments.get(groupNumber);
             items.sort(Comparator.comparing(RoundGroupAssignmentItemRequest::getSeatOrder));
@@ -152,6 +167,24 @@ public class RoundGroupService {
         }
 
         return getRoundGroups(roundId);
+    }
+
+    private Map<Integer, LocalTime> buildTeeTimesByGroupNumber(RoundGroupAssignmentRequest request) {
+        Map<Integer, LocalTime> result = new HashMap<>();
+
+        if (request == null || request.getGroupTeeTimes() == null) {
+            return result;
+        }
+
+        for (RoundGroupTeeTimeRequest teeTimeRequest : request.getGroupTeeTimes()) {
+            if (teeTimeRequest == null || teeTimeRequest.getGroupNumber() == null) {
+                continue;
+            }
+
+            result.put(teeTimeRequest.getGroupNumber(), teeTimeRequest.getTeeTime());
+        }
+
+        return result;
     }
 
     private void applyTeeSelections(
@@ -188,25 +221,14 @@ public class RoundGroupService {
                 );
             }
         } else {
-            boolean useAlternateTee = Boolean.TRUE.equals(item.getUseAlternateTee());
-
-            if (useAlternateTee) {
-                selectedRoundTee = round.getAlternateRoundTee();
-                if (selectedRoundTee == null) {
-                    throw new IllegalArgumentException(
-                            "Round " + round.getId() + " does not have an alternate tee configured."
-                    );
-                }
-            } else {
-                selectedRoundTee = round.getDefaultRoundTee();
-                if (selectedRoundTee == null) {
-                    selectedRoundTee = round.getStandardRoundTee();
-                }
-                if (selectedRoundTee == null) {
-                    throw new IllegalArgumentException(
-                            "Round " + round.getId() + " does not have a default tee configured."
-                    );
-                }
+            selectedRoundTee = round.getDefaultRoundTee();
+            if (selectedRoundTee == null) {
+                selectedRoundTee = round.getStandardRoundTee();
+            }
+            if (selectedRoundTee == null) {
+                throw new IllegalArgumentException(
+                        "Round " + round.getId() + " does not have a default tee configured."
+                );
             }
         }
 
@@ -277,6 +299,8 @@ public class RoundGroupService {
 
         List<RoundGroupAssignmentItemRequest> assignments = request.getAssignments();
 
+        validateGroupTeeTimes(request);
+
         Set<Long> playerIds = new HashSet<>();
         Set<String> groupSeatKeys = new HashSet<>();
         Map<Integer, Integer> countsByGroup = new HashMap<>();
@@ -336,6 +360,29 @@ public class RoundGroupService {
         }
     }
 
+    private void validateGroupTeeTimes(RoundGroupAssignmentRequest request) {
+        if (request.getGroupTeeTimes() == null) {
+            return;
+        }
+
+        Set<Integer> groupNumbers = new HashSet<>();
+
+        for (RoundGroupTeeTimeRequest teeTimeRequest : request.getGroupTeeTimes()) {
+            if (teeTimeRequest == null) {
+                continue;
+            }
+
+            Integer groupNumber = teeTimeRequest.getGroupNumber();
+            if (groupNumber == null || groupNumber < 1) {
+                throw new IllegalArgumentException("Each tee time row must include a valid groupNumber.");
+            }
+
+            if (!groupNumbers.add(groupNumber)) {
+                throw new IllegalArgumentException("Duplicate tee time row for group " + groupNumber + ".");
+            }
+        }
+    }
+
     private Map<Long, Player> loadPlayers(RoundGroupAssignmentRequest request) {
         List<Long> playerIds = new ArrayList<>();
 
@@ -370,6 +417,7 @@ public class RoundGroupService {
         RoundGroupResponse response = new RoundGroupResponse();
         response.setGroupId(group.getId());
         response.setGroupNumber(group.getGroupNumber());
+        response.setTeeTime(group.getTeeTime());
 
         List<RoundGroupPlayerResponse> players = new ArrayList<>();
         List<RoundGroupPlayer> sortedPlayers = new ArrayList<>(group.getPlayers());

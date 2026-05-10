@@ -10,4 +10,6 @@ public interface RoundGroupPlayerRepository extends JpaRepository<RoundGroupPlay
     List<RoundGroupPlayer> findByRoundGroup_IdOrderBySeatOrderAsc(Long roundGroupId);
 
     void deleteByRoundGroup_Round_Id(Long roundId);
+
+    void deleteByRoundGroup_Round_Trip_Id(Long tripId);
 }

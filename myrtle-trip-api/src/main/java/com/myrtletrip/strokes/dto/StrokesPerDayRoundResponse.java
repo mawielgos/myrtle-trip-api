@@ -19,6 +19,9 @@ public class StrokesPerDayRoundResponse {
     private Integer alternateSlope;
     private Integer standardYardage;
     private Integer alternateYardage;
+    private String statusCode;
+    private String statusLabel;
+    private Boolean teePlanningLocked;
 
     public Long getRoundId() {
         return roundId;
@@ -131,4 +134,29 @@ public class StrokesPerDayRoundResponse {
     public void setAlternateYardage(Integer alternateYardage) {
         this.alternateYardage = alternateYardage;
     }
+
+    public String getStatusCode() {
+        return statusCode;
+    }
+
+    public void setStatusCode(String statusCode) {
+        this.statusCode = statusCode;
+    }
+
+    public String getStatusLabel() {
+        return statusLabel;
+    }
+
+    public void setStatusLabel(String statusLabel) {
+        this.statusLabel = statusLabel;
+    }
+
+    public Boolean getTeePlanningLocked() {
+        return teePlanningLocked;
+    }
+
+    public void setTeePlanningLocked(Boolean teePlanningLocked) {
+        this.teePlanningLocked = teePlanningLocked;
+    }
 }
+

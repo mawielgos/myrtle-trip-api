@@ -13,6 +13,7 @@ public class TripReadinessResponse {
     private Boolean rosterReady;
     private Boolean plannedRoundsReady;
     private Boolean ghinFixesReady;
+    private Boolean handicapIndexesReady;
     private Boolean canStartTrip;
 
     private List<String> blockingItems = new ArrayList<String>();
@@ -71,6 +72,14 @@ public class TripReadinessResponse {
 
     public void setGhinFixesReady(Boolean ghinFixesReady) {
         this.ghinFixesReady = ghinFixesReady;
+    }
+
+    public Boolean getHandicapIndexesReady() {
+        return handicapIndexesReady;
+    }
+
+    public void setHandicapIndexesReady(Boolean handicapIndexesReady) {
+        this.handicapIndexesReady = handicapIndexesReady;
     }
 
     public Boolean getCanStartTrip() {

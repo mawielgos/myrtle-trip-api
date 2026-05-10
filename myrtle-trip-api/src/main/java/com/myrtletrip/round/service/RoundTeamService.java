@@ -18,6 +18,7 @@ import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,7 @@ public class RoundTeamService {
     private final ScorecardHandicapService scorecardHandicapService;
     private final RoundGroupAutoAssignmentService roundGroupAutoAssignmentService;
     private final RoundTeeResolver roundTeeResolver;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundTeamService(
             RoundRepository roundRepository,
@@ -47,7 +49,8 @@ public class RoundTeamService {
             ScorecardRepository scorecardRepository,
             ScorecardHandicapService scorecardHandicapService,
             RoundGroupAutoAssignmentService roundGroupAutoAssignmentService,
-            RoundTeeResolver roundTeeResolver
+            RoundTeeResolver roundTeeResolver,
+            TripEditingGuardService tripEditingGuardService
     ) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
@@ -58,12 +61,15 @@ public class RoundTeamService {
         this.scorecardHandicapService = scorecardHandicapService;
         this.roundGroupAutoAssignmentService = roundGroupAutoAssignmentService;
         this.roundTeeResolver = roundTeeResolver;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
     public List<RoundTeamResponse> saveTeams(Long roundId, SaveRoundTeamsRequest request) {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found"));
+
+        tripEditingGuardService.assertStructureEditable(round.getTrip());
 
         if (Boolean.TRUE.equals(round.getFinalized())) {
             throw new IllegalStateException("Round is already finalized");
@@ -118,6 +124,12 @@ public class RoundTeamService {
                 scorecardRepository.save(scorecard);
 
                 Long roundTeeId = playerRequest.getRoundTeeId();
+                if (roundTeeId == null && scorecard.getRoundTee() != null) {
+                    // Preserve the initialized player-specific default tee. This matters for
+                    // female players because their default tee may intentionally differ from
+                    // the round-level men's default tee.
+                    roundTeeId = scorecard.getRoundTee().getId();
+                }
                 if (roundTeeId == null) {
                     roundTeeId = round.getDefaultRoundTee() == null ? null : round.getDefaultRoundTee().getId();
                 }
@@ -127,7 +139,7 @@ public class RoundTeamService {
             }
         }
 
-        if (format == RoundFormat.TWO_MAN_LOW_NET) {
+        if (format == RoundFormat.TWO_MAN_LOW_NET || format == RoundFormat.TEAM_SCRAMBLE) {
             roundGroupAutoAssignmentService.syncGroupsFromTeamsIfNeeded(roundId);
         }
 
@@ -175,14 +187,14 @@ public class RoundTeamService {
     private void validateRequest(SaveRoundTeamsRequest request, RoundFormat format, Round round) {
         Set<Integer> teamNumbers = new HashSet<>();
         Set<Long> playerIds = new HashSet<>();
-        int expectedTeamSize = format.expectedTeamSize();
+        int expectedTeamSize = resolveExpectedTeamSize(round);
 
         for (RoundTeamRequest team : request.getTeams()) {
             if (team.getTeamNumber() == null) throw new IllegalArgumentException("Each team must have a teamNumber");
             if (!teamNumbers.add(team.getTeamNumber())) throw new IllegalArgumentException("Duplicate teamNumber: " + team.getTeamNumber());
             if (team.getPlayers() == null || team.getPlayers().isEmpty()) throw new IllegalArgumentException("Each team must have at least one player");
-            if (team.getPlayers().size() != expectedTeamSize) {
-                throw new IllegalArgumentException("Format " + format + " requires exactly " + expectedTeamSize
+            if (team.getPlayers().size() > expectedTeamSize) {
+                throw new IllegalArgumentException("Format " + format + " allows at most " + expectedTeamSize
                         + " players per team. Team " + team.getTeamNumber() + " has " + team.getPlayers().size());
             }
 
@@ -206,6 +218,14 @@ public class RoundTeamService {
         }
     }
 
+    private int resolveExpectedTeamSize(Round round) {
+        if (round != null && round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+            Integer size = round.getScrambleTeamSize();
+            return size == null || size < 1 ? 4 : size;
+        }
+        return round == null || round.getFormat() == null ? 4 : round.getFormat().expectedTeamSize();
+    }
+
     private void applyScorecardTee(RoundTeamPlayerResponse playerResponse, Scorecard scorecard, Round round) {
         playerResponse.setScorecardId(scorecard.getId());
         RoundTee resolved = roundTeeResolver.resolve(scorecard);
@@ -213,9 +233,6 @@ public class RoundTeamService {
         playerResponse.setRoundTeeName(resolved.getTeeName());
         Long defaultId = round.getDefaultRoundTee() == null ? null : round.getDefaultRoundTee().getId();
         playerResponse.setTeeOverride(defaultId != null && resolved.getId() != null && !defaultId.equals(resolved.getId()));
-        playerResponse.setUseAlternateTee(false);
-        playerResponse.setStandardTeeEligible(true);
-        playerResponse.setAlternateTeeEligible(false);
     }
 
     private String normalizeGender(String gender) {

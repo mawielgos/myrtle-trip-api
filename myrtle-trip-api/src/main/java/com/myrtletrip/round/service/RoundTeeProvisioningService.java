@@ -119,7 +119,7 @@ public class RoundTeeProvisioningService {
 
     private RoundTee chooseFallbackDefault(Map<Long, RoundTee> byCourseTeeId) {
         for (RoundTee tee : byCourseTeeId.values()) {
-            if (tee.getTeeRole() == RoundTeeRole.DEFAULT || tee.getTeeRole() == RoundTeeRole.STANDARD) {
+            if (tee.getTeeRole() == RoundTeeRole.DEFAULT) {
                 return tee;
             }
         }

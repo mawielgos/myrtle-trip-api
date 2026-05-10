@@ -8,6 +8,7 @@ public class CurrentRoundResponse {
     private String format;
     private String courseName;
     private String teeName;
+    private Integer scrambleTeamSize;
     private boolean finalized;
 
     public Long getRoundId() {
@@ -56,6 +57,14 @@ public class CurrentRoundResponse {
 
     public void setTeeName(String teeName) {
         this.teeName = teeName;
+    }
+
+    public Integer getScrambleTeamSize() {
+        return scrambleTeamSize;
+    }
+
+    public void setScrambleTeamSize(Integer scrambleTeamSize) {
+        this.scrambleTeamSize = scrambleTeamSize;
     }
 
     public boolean isFinalized() {

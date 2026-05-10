@@ -11,4 +11,6 @@ public interface RoundTeeRepository extends JpaRepository<RoundTee, Long> {
     List<RoundTee> findByRound_IdOrderByTeeNameAsc(Long roundId);
 
     Optional<RoundTee> findByRound_IdAndSourceCourseTee_Id(Long roundId, Long sourceCourseTeeId);
+
+    void deleteByRound_Trip_Id(Long tripId);
 }

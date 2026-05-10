@@ -6,11 +6,14 @@ import com.myrtletrip.round.dto.SaveRoundScrambleScoresRequest;
 import com.myrtletrip.round.dto.SaveRoundScrambleTeamScoreRequest;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
+import com.myrtletrip.round.entity.RoundTeamPlayer;
 import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
+import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.scoreentry.entity.TeamHoleScore;
 import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,16 +27,22 @@ public class RoundScrambleScoreService {
     private final RoundRepository roundRepository;
     private final RoundTeamRepository roundTeamRepository;
     private final TeamHoleScoreRepository teamHoleScoreRepository;
+    private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundScrambleScoreService(RoundRepository roundRepository,
                                      RoundTeamRepository roundTeamRepository,
                                      TeamHoleScoreRepository teamHoleScoreRepository,
-                                     RoundRecalculationOrchestrationService roundRecalculationOrchestrationService) {
+                                     RoundTeamPlayerRepository roundTeamPlayerRepository,
+                                     RoundRecalculationOrchestrationService roundRecalculationOrchestrationService,
+                                     TripEditingGuardService tripEditingGuardService) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
         this.teamHoleScoreRepository = teamHoleScoreRepository;
+        this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional(readOnly = true)
@@ -49,6 +58,7 @@ public class RoundScrambleScoreService {
             teamResponse.setTeamNumber(team.getTeamNumber());
             teamResponse.setTeamName(resolveTeamName(team));
             teamResponse.setTotalScore(team.getScrambleTotalScore());
+            teamResponse.setPlayerNames(resolvePlayerNames(team));
 
             Map<Integer, Integer> scoreByHole = new HashMap<>();
             List<TeamHoleScore> holeScores = teamHoleScoreRepository.findByRoundTeam_IdOrderByHoleNumberAsc(team.getId());
@@ -68,6 +78,8 @@ public class RoundScrambleScoreService {
     @Transactional
     public void saveScrambleScores(Long roundId, SaveRoundScrambleScoresRequest request) {
         Round round = loadScrambleRound(roundId);
+        tripEditingGuardService.assertCorrectionAllowedForRound(round);
+
         if (request == null || request.getTeams() == null || request.getTeams().isEmpty()) {
             throw new IllegalArgumentException("No scramble team scores supplied");
         }
@@ -141,6 +153,35 @@ public class RoundScrambleScoreService {
         if (score < 1 || score > 200) {
             throw new IllegalArgumentException("Invalid scramble " + label + " for teamId=" + teamId + ": " + score);
         }
+    }
+
+    private List<String> resolvePlayerNames(RoundTeam team) {
+        List<String> names = new java.util.ArrayList<>();
+        if (team == null || team.getId() == null) {
+            return names;
+        }
+
+        List<RoundTeamPlayer> players = roundTeamPlayerRepository.findByRoundTeam_IdOrderByPlayerOrderAsc(team.getId());
+        for (RoundTeamPlayer teamPlayer : players) {
+            if (teamPlayer == null || teamPlayer.getPlayer() == null) {
+                continue;
+            }
+
+            String displayName = teamPlayer.getPlayer().getDisplayName();
+            if (displayName == null || displayName.isBlank()) {
+                String firstName = teamPlayer.getPlayer().getFirstName();
+                String lastName = teamPlayer.getPlayer().getLastName();
+                displayName = ((firstName == null ? "" : firstName) + " " + (lastName == null ? "" : lastName)).trim();
+            }
+
+            if (displayName == null || displayName.isBlank()) {
+                displayName = "Player " + teamPlayer.getPlayer().getId();
+            }
+
+            names.add(displayName);
+        }
+
+        return names;
     }
 
     private String resolveTeamName(RoundTeam team) {

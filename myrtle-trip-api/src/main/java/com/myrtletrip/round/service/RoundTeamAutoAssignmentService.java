@@ -67,8 +67,13 @@ public class RoundTeamAutoAssignmentService {
             return;
         }
 
-        // Only auto-build teams from groups for the 4-man team formats.
-        if (!format.requiresTeams() || format.expectedTeamSize() != 4) {
+        // Auto-build teams from tee-sheet groups for team formats where a group is also the competition team.
+        if (!format.requiresTeams()) {
+            return;
+        }
+
+        int expectedTeamSize = round.getFormat().expectedTeamSize();
+        if (format != RoundFormat.TEAM_SCRAMBLE && expectedTeamSize != 4) {
             return;
         }
 

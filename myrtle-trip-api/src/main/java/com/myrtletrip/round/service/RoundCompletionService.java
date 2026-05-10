@@ -1,5 +1,7 @@
 package com.myrtletrip.round.service;
 
+import com.myrtletrip.games.service.RoundGameScoringService;
+import com.myrtletrip.prize.service.TripPrizeRecalculationService;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.model.RoundFormat;
@@ -11,6 +13,9 @@ import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
 import com.myrtletrip.scorehistory.service.RoundScoreHistorySyncService;
 import com.myrtletrip.trip.service.TripService;
+import com.myrtletrip.trip.service.TripEditingGuardService;
+
+import jakarta.persistence.EntityManager;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +32,10 @@ public class RoundCompletionService {
     private final RoundScoreHistorySyncService roundScoreHistorySyncService;
     private final ScorecardHandicapService scorecardHandicapService;
     private final TripService tripService;
+    private final RoundGameScoringService roundGameScoringService;
+    private final TripPrizeRecalculationService tripPrizeRecalculationService;
+    private final EntityManager entityManager;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundCompletionService(RoundRepository roundRepository,
             RoundTeamRepository roundTeamRepository,
@@ -34,7 +43,11 @@ public class RoundCompletionService {
             TeamHoleScoreRepository teamHoleScoreRepository,
             RoundScoreHistorySyncService roundScoreHistorySyncService,
             ScorecardHandicapService scorecardHandicapService,
-            TripService tripService) {
+            TripService tripService,
+            RoundGameScoringService roundGameScoringService,
+            TripPrizeRecalculationService tripPrizeRecalculationService,
+            EntityManager entityManager,
+            TripEditingGuardService tripEditingGuardService) {
 		this.roundRepository = roundRepository;
 		this.roundTeamRepository = roundTeamRepository;
 		this.scorecardRepository = scorecardRepository;
@@ -42,11 +55,17 @@ public class RoundCompletionService {
 		this.roundScoreHistorySyncService = roundScoreHistorySyncService;
 		this.scorecardHandicapService = scorecardHandicapService;
 		this.tripService = tripService;
+        this.roundGameScoringService = roundGameScoringService;
+        this.tripPrizeRecalculationService = tripPrizeRecalculationService;
+        this.entityManager = entityManager;
+        this.tripEditingGuardService = tripEditingGuardService;
 	}
     @Transactional
     public void finalizeRound(Long roundId) {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found"));
+
+        tripEditingGuardService.assertStructureEditable(round.getTrip());
 
         if (Boolean.TRUE.equals(round.getFinalized())) {
             throw new IllegalStateException("Round already finalized");
@@ -95,7 +114,8 @@ public class RoundCompletionService {
         for (Scorecard sc : scorecards) {
             roundScoreHistorySyncService.syncFinalizedScorecard(sc);
         }
-        tripService.refreshTripStatusFromRounds(round.getTrip().getId());
+
+        handlePostFinalizationRecalculation(round);
     }
 
     private void finalizeTeamScrambleRound(Round round) {
@@ -134,7 +154,25 @@ public class RoundCompletionService {
 
         round.setFinalized(true);
         roundRepository.save(round);
-        tripService.refreshTripStatusFromRounds(round.getTrip().getId());
+
+        handlePostFinalizationRecalculation(round);
     }
 
+
+    private void handlePostFinalizationRecalculation(Round round) {
+        Long tripId = round.getTrip().getId();
+
+        if (round.getFormat() != null && round.getFormat().requiresTeams()) {
+            roundGameScoringService.recalculateRound(round.getId());
+        }
+
+        tripService.refreshTripStatusFromRounds(tripId);
+
+        // Round finalization creates new persisted results/prize eligibility. Flush and clear so
+        // prize recalculation reads finalized round/game data from the database instead of stale
+        // persistence-context state.
+        entityManager.flush();
+        entityManager.clear();
+        tripPrizeRecalculationService.recalculate(tripId);
+    }
 }

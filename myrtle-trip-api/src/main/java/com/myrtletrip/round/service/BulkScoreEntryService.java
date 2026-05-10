@@ -7,6 +7,7 @@ import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.service.ScoringService;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,15 +22,18 @@ public class BulkScoreEntryService {
     private final HoleScoreRepository holeScoreRepository;
     private final ScoringService scoringService;
     private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public BulkScoreEntryService(ScorecardRepository scorecardRepository,
                                  HoleScoreRepository holeScoreRepository,
                                  ScoringService scoringService,
-                                 RoundRecalculationOrchestrationService roundRecalculationOrchestrationService) {
+                                 RoundRecalculationOrchestrationService roundRecalculationOrchestrationService,
+                                 TripEditingGuardService tripEditingGuardService) {
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
         this.scoringService = scoringService;
         this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
@@ -42,6 +46,8 @@ public class BulkScoreEntryService {
         if (roundScorecards.isEmpty()) {
             throw new IllegalArgumentException("Round not found or has no scorecards: " + roundId);
         }
+
+        tripEditingGuardService.assertCorrectionAllowedForRound(roundScorecards.get(0).getRound());
 
         Map<Long, Scorecard> scorecardByPlayerId = new HashMap<>();
         for (Scorecard scorecard : roundScorecards) {

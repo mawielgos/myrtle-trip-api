@@ -16,4 +16,6 @@ public interface RoundGroupRepository extends JpaRepository<RoundGroup, Long> {
     boolean existsByRound_Id(Long roundId);
     
     long countByRoundId(Long roundId);
+
+    void deleteByRound_Trip_Id(Long tripId);
 }

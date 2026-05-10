@@ -3,7 +3,6 @@ package com.myrtletrip.scorehistory.service;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.model.RoundFormat;
-import com.myrtletrip.round.model.RoundTeeRole;
 import com.myrtletrip.round.service.RoundTeeResolver;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
@@ -86,7 +85,9 @@ public class RoundScoreHistorySyncService {
         ));
         entry.setSourceType(SOURCE_TRIP_ROUND);
         entry.setIncludedInMyrtleCalc(true);
-        entry.setUsedAlternateTee(isAlternateTee(scorecard));
+        // Phase 1 legacy cleanup: used_alternate_tee is retained physically until Phase 2,
+        // but the application no longer derives behavior from old alternate/default tee roles.
+  //      entry.setUsedAlternateTee(false);
         entry.setHandicapGroupCode(round.getTrip().getTripCode());
         entry.setHolesPlayed(18);
         entry.setManualDifferentialRequired(false);
@@ -116,11 +117,6 @@ public class RoundScoreHistorySyncService {
                             + scorecard.getPlayer().getId()
             );
         }
-    }
-
-    private boolean isAlternateTee(Scorecard scorecard) {
-        RoundTee roundTee = roundTeeResolver.resolve(scorecard);
-        return roundTee != null && roundTee.getTeeRole() == RoundTeeRole.ALTERNATE;
     }
 
     private BigDecimal calculateDifferential(Integer adjustedGrossScore,

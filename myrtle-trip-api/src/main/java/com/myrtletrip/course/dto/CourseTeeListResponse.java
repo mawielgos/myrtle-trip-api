@@ -18,6 +18,7 @@ public class CourseTeeListResponse {
     private BigDecimal womenCourseRating;
     private Integer womenSlope;
     private Integer womenParTotal;
+    private Long holeCount;
 
     public Long getCourseTeeId() { return courseTeeId; }
     public void setCourseTeeId(Long courseTeeId) { this.courseTeeId = courseTeeId; }
@@ -57,4 +58,7 @@ public class CourseTeeListResponse {
 
     public Integer getWomenParTotal() { return womenParTotal; }
     public void setWomenParTotal(Integer womenParTotal) { this.womenParTotal = womenParTotal; }
+
+    public Long getHoleCount() { return holeCount; }
+    public void setHoleCount(Long holeCount) { this.holeCount = holeCount; }
 }

@@ -8,4 +8,8 @@ import java.util.List;
 public interface RoundCorrectionLogRepository extends JpaRepository<RoundCorrectionLog, Long> {
 
     List<RoundCorrectionLog> findByRound_IdOrderByCreatedAtDescIdDesc(Long roundId);
+
+    long countByRound_Trip_Id(Long tripId);
+
+    void deleteByRound_Trip_Id(Long tripId);
 }

@@ -45,8 +45,12 @@ public class RoundGroupAutoAssignmentService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
-        if (round.getFormat() != RoundFormat.TWO_MAN_LOW_NET) {
+        if (round.getFormat() != RoundFormat.TWO_MAN_LOW_NET && round.getFormat() != RoundFormat.TEAM_SCRAMBLE) {
             return;
+        }
+
+        if (Boolean.TRUE.equals(round.getFinalized())) {
+            throw new IllegalStateException("Cannot update groups after round is finalized.");
         }
 
         List<RoundTeam> teams = roundTeamRepository.findByRound_IdOrderByTeamNumberAsc(roundId);
@@ -55,6 +59,17 @@ public class RoundGroupAutoAssignmentService {
             return;
         }
 
+        if (round.getFormat() == RoundFormat.TWO_MAN_LOW_NET) {
+            syncTwoManGroups(round, roundId, teams);
+            return;
+        }
+
+        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+            syncScrambleGroups(round, roundId, teams);
+        }
+    }
+
+    private void syncTwoManGroups(Round round, Long roundId, List<RoundTeam> teams) {
         List<RoundTeam> completeTeams = new ArrayList<>();
 
         for (RoundTeam team : teams) {
@@ -99,6 +114,46 @@ public class RoundGroupAutoAssignmentService {
             roundGroupRepository.save(group);
             groupNumber++;
         }
+    }
+
+    private void syncScrambleGroups(Round round, Long roundId, List<RoundTeam> teams) {
+        clearExistingGroups(roundId);
+
+        int expectedTeamSize = resolveScrambleTeamSize(round);
+        int groupNumber = 1;
+
+        for (RoundTeam team : teams) {
+            if (team == null || team.getId() == null) {
+                continue;
+            }
+
+            List<RoundTeamPlayer> teamPlayers =
+                    roundTeamPlayerRepository.findByRoundTeam_IdOrderByPlayerOrderAsc(team.getId());
+
+            if (teamPlayers == null || teamPlayers.size() != expectedTeamSize) {
+                continue;
+            }
+
+            RoundGroup group = new RoundGroup();
+            group.setRound(round);
+            group.setGroupNumber(groupNumber);
+
+            int seatOrder = 1;
+            for (RoundTeamPlayer teamPlayer : teamPlayers) {
+                addGroupPlayer(group, teamPlayer, seatOrder);
+                seatOrder++;
+            }
+
+            roundGroupRepository.save(group);
+            groupNumber++;
+        }
+    }
+
+    private int resolveScrambleTeamSize(Round round) {
+        if (round == null || round.getScrambleTeamSize() == null || round.getScrambleTeamSize() < 1) {
+            return 4;
+        }
+        return round.getScrambleTeamSize();
     }
 
     private void addGroupPlayer(RoundGroup group, RoundTeamPlayer teamPlayer, int seatOrder) {

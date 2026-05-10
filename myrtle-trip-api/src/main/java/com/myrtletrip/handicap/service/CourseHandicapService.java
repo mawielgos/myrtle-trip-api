@@ -10,16 +10,18 @@ import java.math.RoundingMode;
 public class CourseHandicapService {
 
     public Integer calculateCourseHandicap(BigDecimal handicapIndex, RoundTee roundTee) {
+        return calculateCourseHandicap(handicapIndex, roundTee, "M");
+    }
+
+    public Integer calculateCourseHandicap(BigDecimal handicapIndex, RoundTee roundTee, String gender) {
         if (handicapIndex == null || roundTee == null) {
             return null;
         }
 
-        BigDecimal slope = roundTee.getSlope() == null
-                ? null
-                : BigDecimal.valueOf(roundTee.getSlope());
-
-        BigDecimal courseRating = roundTee.getCourseRating();
-        Integer parTotal = roundTee.getParTotal();
+        BigDecimal courseRating = resolveCourseRating(roundTee, gender);
+        Integer slopeValue = resolveSlope(roundTee, gender);
+        Integer parTotal = resolveParTotal(roundTee, gender);
+        BigDecimal slope = slopeValue == null ? null : BigDecimal.valueOf(slopeValue);
 
         if (slope == null || courseRating == null || parTotal == null) {
             return null;
@@ -31,5 +33,26 @@ public class CourseHandicapService {
                 .add(courseRating.subtract(BigDecimal.valueOf(parTotal)));
 
         return courseHandicap.setScale(0, RoundingMode.HALF_UP).intValue();
+    }
+
+    private BigDecimal resolveCourseRating(RoundTee roundTee, String gender) {
+        if (roundTee.getSourceCourseTee() != null) {
+            return roundTee.getSourceCourseTee().getRatingForGender(gender);
+        }
+        return roundTee.getCourseRating();
+    }
+
+    private Integer resolveSlope(RoundTee roundTee, String gender) {
+        if (roundTee.getSourceCourseTee() != null) {
+            return roundTee.getSourceCourseTee().getSlopeForGender(gender);
+        }
+        return roundTee.getSlope();
+    }
+
+    private Integer resolveParTotal(RoundTee roundTee, String gender) {
+        if (roundTee.getSourceCourseTee() != null) {
+            return roundTee.getSourceCourseTee().getParForGender(gender);
+        }
+        return roundTee.getParTotal();
     }
 }

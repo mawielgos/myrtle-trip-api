@@ -2,6 +2,7 @@ package com.myrtletrip.round.entity;
 
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +25,9 @@ public class RoundGroup {
 
     @Column(name = "group_number", nullable = false)
     private Integer groupNumber;
+
+    @Column(name = "tee_time")
+    private LocalTime teeTime;
 
     @OneToMany(
             mappedBy = "roundGroup",
@@ -57,6 +61,14 @@ public class RoundGroup {
 
     public void setGroupNumber(Integer groupNumber) {
         this.groupNumber = groupNumber;
+    }
+
+    public LocalTime getTeeTime() {
+        return teeTime;
+    }
+
+    public void setTeeTime(LocalTime teeTime) {
+        this.teeTime = teeTime;
     }
 
     public List<RoundGroupPlayer> getPlayers() {

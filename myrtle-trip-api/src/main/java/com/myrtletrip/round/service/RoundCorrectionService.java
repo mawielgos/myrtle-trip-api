@@ -12,6 +12,7 @@ import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,7 @@ public class RoundCorrectionService {
     private final ScorecardHandicapService scorecardHandicapService;
     private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
     private final RoundCorrectionLogService roundCorrectionLogService;
+    private final TripEditingGuardService tripEditingGuardService;
 
     public RoundCorrectionService(RoundRepository roundRepository,
                                   ScorecardRepository scorecardRepository,
@@ -35,7 +37,8 @@ public class RoundCorrectionService {
                                   BulkScoreEntryService bulkScoreEntryService,
                                   ScorecardHandicapService scorecardHandicapService,
                                   RoundRecalculationOrchestrationService roundRecalculationOrchestrationService,
-                                  RoundCorrectionLogService roundCorrectionLogService) {
+                                  RoundCorrectionLogService roundCorrectionLogService,
+                                  TripEditingGuardService tripEditingGuardService) {
         this.roundRepository = roundRepository;
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
@@ -43,6 +46,7 @@ public class RoundCorrectionService {
         this.scorecardHandicapService = scorecardHandicapService;
         this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
         this.roundCorrectionLogService = roundCorrectionLogService;
+        this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional
@@ -50,6 +54,7 @@ public class RoundCorrectionService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
+        tripEditingGuardService.assertCorrectionAllowedForRound(round);
         validateRequest(request);
 
         Boolean wasFinalized = round.getFinalized();

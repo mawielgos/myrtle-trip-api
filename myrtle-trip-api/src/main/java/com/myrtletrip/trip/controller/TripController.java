@@ -11,14 +11,16 @@ import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
 import com.myrtletrip.trip.dto.TripPlayerResponse;
 import com.myrtletrip.trip.dto.TripRoundListResponse;
 import com.myrtletrip.trip.dto.TripSetupRequest;
+import com.myrtletrip.scorehistory.dto.DbScoreHistoryImportCandidateResponse;
 import com.myrtletrip.scorehistory.dto.ManualScoreHistoryEntryResponse;
 import com.myrtletrip.scorehistory.dto.SaveManualScoreHistoryEntryRequest;
 import com.myrtletrip.scorehistory.service.ManualScoreHistoryService;
-import com.myrtletrip.standings.dto.FourDayStandingsResponse;
-import com.myrtletrip.standings.service.FourDayStandingsService;
+import com.myrtletrip.standings.dto.TournamentStandingsResponse;
+import com.myrtletrip.standings.service.TournamentStandingsService;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.service.TripGhinFixService;
 import com.myrtletrip.trip.service.TripBillInventoryService;
+import com.myrtletrip.trip.service.TripCompletionService;
 import com.myrtletrip.trip.service.TripInitializationService;
 import com.myrtletrip.trip.service.TripService;
 import org.springframework.web.bind.annotation.*;
@@ -32,22 +34,25 @@ public class TripController {
     private final TripService tripService;
     private final TripInitializationService tripInitializationService;
     private final TripGhinFixService tripGhinFixService;
-    private final FourDayStandingsService fourDayStandingsService;
+    private final TournamentStandingsService tournamentStandingsService;
     private final TripBillInventoryService tripBillInventoryService;
+    private final TripCompletionService tripCompletionService;
     private final ManualScoreHistoryService manualScoreHistoryService;
     
     public TripController(TripService tripService,
             TripInitializationService tripInitializationService,
             TripGhinFixService tripGhinFixService,
-            FourDayStandingsService fourDayStandingsService,
+            TournamentStandingsService tournamentStandingsService,
             TripBillInventoryService tripBillInventoryService,
+            TripCompletionService tripCompletionService,
             ManualScoreHistoryService manualScoreHistoryService) {
     	
 		this.tripService = tripService;
 		this.tripInitializationService = tripInitializationService;
 		this.tripGhinFixService = tripGhinFixService;
-		this.fourDayStandingsService = fourDayStandingsService;
+		this.tournamentStandingsService = tournamentStandingsService;
         this.tripBillInventoryService = tripBillInventoryService;
+        this.tripCompletionService = tripCompletionService;
         this.manualScoreHistoryService = manualScoreHistoryService;
     }
     @PostMapping
@@ -72,8 +77,8 @@ public class TripController {
     }
 
     @GetMapping
-    public List<TripListResponse> getTrips() {
-        return tripService.getTrips();
+    public List<TripListResponse> getTrips(@RequestParam(name = "includeArchived", defaultValue = "false") boolean includeArchived) {
+        return tripService.getTrips(includeArchived);
     }
 
     @GetMapping("/{tripId}")
@@ -102,9 +107,15 @@ public class TripController {
         return tripService.getTripRounds(tripId);
     }
 
+    @GetMapping("/{tripId}/tournament-standings")
+    public TournamentStandingsResponse getTournamentStandings(@PathVariable Long tripId) {
+        return tournamentStandingsService.getTournamentStandings(tripId);
+    }
+
+    // Backward-compatible alias for older UI routes/bookmarks.
     @GetMapping("/{tripId}/four-day-standings")
-    public FourDayStandingsResponse getFourDayStandings(@PathVariable Long tripId) {
-        return fourDayStandingsService.getFourDayStandings(tripId);
+    public TournamentStandingsResponse getLegacyFourDayStandings(@PathVariable Long tripId) {
+        return tournamentStandingsService.getTournamentStandings(tripId);
     }
 
     @GetMapping("/{tripId}/bill-inventory")
@@ -141,9 +152,45 @@ public class TripController {
         tripInitializationService.initializeTrip(tripId);
     }
 
+    @PostMapping("/{tripId}/reset-start")
+    public void resetTripStart(@PathVariable Long tripId) {
+        tripInitializationService.resetTripStart(tripId);
+    }
+
+    @PostMapping("/{tripId}/archive")
+    public void archiveTrip(@PathVariable Long tripId) {
+        tripService.archiveTrip(tripId);
+    }
+
+    @PostMapping("/{tripId}/restore")
+    public void restoreTrip(@PathVariable Long tripId) {
+        tripService.restoreTrip(tripId);
+    }
+
+    @PostMapping("/{tripId}/complete")
+    public void completeTrip(@PathVariable Long tripId) {
+        tripCompletionService.completeTrip(tripId);
+    }
+
+    @PostMapping("/{tripId}/correction-mode/enable")
+    public void enableCorrectionMode(@PathVariable Long tripId) {
+        tripCompletionService.enableCorrectionMode(tripId);
+    }
+
+    @PostMapping("/{tripId}/correction-mode/disable")
+    public void disableCorrectionMode(@PathVariable Long tripId) {
+        tripCompletionService.disableCorrectionMode(tripId);
+    }
+
     @GetMapping("/{tripId}/manual-score-history")
     public List<ManualScoreHistoryEntryResponse> getManualScoreHistory(@PathVariable Long tripId) {
         return manualScoreHistoryService.getManualEntries(tripId);
+    }
+
+
+    @GetMapping("/{tripId}/manual-score-history/importable-db-scores")
+    public List<DbScoreHistoryImportCandidateResponse> getImportableDbScoreHistory(@PathVariable Long tripId) {
+        return manualScoreHistoryService.getImportableDbScoreHistory(tripId);
     }
 
     @PostMapping("/{tripId}/manual-score-history")
