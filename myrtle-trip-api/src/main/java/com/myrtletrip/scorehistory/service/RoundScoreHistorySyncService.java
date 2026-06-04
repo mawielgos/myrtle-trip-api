@@ -2,10 +2,11 @@ package com.myrtletrip.scorehistory.service;
 
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.round.service.RoundEventCapabilityService;
 import com.myrtletrip.round.service.RoundTeeResolver;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scorehistory.entity.ScoreHistoryEntry;
 import com.myrtletrip.scorehistory.repository.ScoreHistoryEntryRepository;
 import org.springframework.stereotype.Service;
@@ -24,13 +25,16 @@ public class RoundScoreHistorySyncService {
     private final ScoreHistoryEntryRepository scoreHistoryEntryRepository;
     private final ScorecardRepository scorecardRepository;
     private final RoundTeeResolver roundTeeResolver;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundScoreHistorySyncService(ScoreHistoryEntryRepository scoreHistoryEntryRepository,
                                         ScorecardRepository scorecardRepository,
-                                        RoundTeeResolver roundTeeResolver) {
+                                        RoundTeeResolver roundTeeResolver,
+                                        RoundEventCapabilityService roundEventCapabilityService) {
         this.scoreHistoryEntryRepository = scoreHistoryEntryRepository;
         this.scorecardRepository = scorecardRepository;
         this.roundTeeResolver = roundTeeResolver;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -54,7 +58,13 @@ public class RoundScoreHistorySyncService {
         if (!Boolean.TRUE.equals(round.getFinalized())) {
             return;
         }
-        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+        if (!roundEventCapabilityService.getCapabilities(round).requiresPlayerScorecards()) {
+            return;
+        }
+
+        if (!isActiveParticipant(scorecard)) {
+            scoreHistoryEntryRepository.findByRound_IdAndPlayer_Id(round.getId(), scorecard.getPlayer().getId())
+                    .ifPresent(scoreHistoryEntryRepository::delete);
             return;
         }
 
@@ -93,6 +103,12 @@ public class RoundScoreHistorySyncService {
         entry.setManualDifferentialRequired(false);
 
         scoreHistoryEntryRepository.save(entry);
+    }
+
+    private boolean isActiveParticipant(Scorecard scorecard) {
+        return scorecard == null
+                || scorecard.getParticipationStatus() == null
+                || ScorecardParticipationStatus.ACTIVE.equals(scorecard.getParticipationStatus());
     }
 
     private void validateFinalizedScorecard(Scorecard scorecard) {

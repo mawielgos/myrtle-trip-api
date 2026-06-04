@@ -1,5 +1,6 @@
 package com.myrtletrip.games.service;
 
+import com.myrtletrip.event.service.RoundEventService;
 import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
 import com.myrtletrip.games.model.PlayerHoleScoringData;
@@ -37,6 +38,7 @@ public class RoundGameScoringServiceTest {
         RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
         ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
         HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        RoundEventService roundEventService = mock(RoundEventService.class);
         TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
 
         List<RoundGameScorer> scorers = new ArrayList<RoundGameScorer>();
@@ -47,7 +49,8 @@ public class RoundGameScoringServiceTest {
                 roundScoringDataService,
                 scorecardRepository,
                 holeScoreRepository,
-                scorers,
+                new RoundGameScorerRegistry(scorers),
+                roundEventService,
                 tripEditingGuardService
         );
 
@@ -55,6 +58,7 @@ public class RoundGameScoringServiceTest {
         when(round.getId()).thenReturn(roundId);
         when(round.getFormat()).thenReturn(RoundFormat.ONE_TWO_THREE);
         when(roundRepository.findById(roundId)).thenReturn(Optional.of(round));
+        when(roundEventService.findActiveEventsForRound(roundId)).thenReturn(new ArrayList<>());
 
         RoundScoringData data = buildOneTwoThreeRoundData(roundId);
         when(roundScoringDataService.build(round)).thenReturn(data);
@@ -126,6 +130,7 @@ public class RoundGameScoringServiceTest {
         RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
         ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
         HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        RoundEventService roundEventService = mock(RoundEventService.class);
         TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
 
         List<RoundGameScorer> scorers = new ArrayList<RoundGameScorer>();
@@ -136,7 +141,8 @@ public class RoundGameScoringServiceTest {
                 roundScoringDataService,
                 scorecardRepository,
                 holeScoreRepository,
-                scorers,
+                new RoundGameScorerRegistry(scorers),
+                roundEventService,
                 tripEditingGuardService
         );
 
@@ -144,6 +150,7 @@ public class RoundGameScoringServiceTest {
         when(round.getId()).thenReturn(roundId);
         when(round.getFormat()).thenReturn(RoundFormat.THREE_LOW_NET);
         when(roundRepository.findById(roundId)).thenReturn(Optional.of(round));
+        when(roundEventService.findActiveEventsForRound(roundId)).thenReturn(new ArrayList<>());
 
         RoundScoringData data = buildThreeLowNetRoundData(roundId);
         when(roundScoringDataService.build(round)).thenReturn(data);

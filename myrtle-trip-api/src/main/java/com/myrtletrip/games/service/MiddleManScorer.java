@@ -4,7 +4,7 @@ import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
 import com.myrtletrip.games.model.RoundScoringData;
 import com.myrtletrip.games.model.TeamScoringData;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.event.model.RoundEventType;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -13,8 +13,8 @@ import java.util.List;
 public class MiddleManScorer extends AbstractTeamGameScorer {
 
     @Override
-    public RoundFormat supports() {
-        return RoundFormat.MIDDLE_MAN;
+    public RoundEventType supports() {
+        return RoundEventType.TEAM_MIDDLE_MAN;
     }
 
     @Override

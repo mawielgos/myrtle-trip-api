@@ -4,6 +4,7 @@ import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTee;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import jakarta.persistence.*;
 
 @Entity
@@ -47,6 +48,13 @@ public class Scorecard {
 
     @Column(name = "thru_hole")
     private Integer thruHole;
+
+    @Column(name = "withdrawal_hole_number")
+    private Integer withdrawalHoleNumber;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "participation_status", nullable = false, length = 20)
+    private ScorecardParticipationStatus participationStatus = ScorecardParticipationStatus.ACTIVE;
 
     public Long getId() {
         return id;
@@ -134,5 +142,32 @@ public class Scorecard {
 
     public void setThruHole(Integer thruHole) {
         this.thruHole = thruHole;
+    }
+
+    public Integer getWithdrawalHoleNumber() {
+        return withdrawalHoleNumber;
+    }
+
+    public void setWithdrawalHoleNumber(Integer withdrawalHoleNumber) {
+        if (withdrawalHoleNumber == null) {
+            this.withdrawalHoleNumber = null;
+        } else if (withdrawalHoleNumber < 0) {
+            this.withdrawalHoleNumber = 0;
+        } else if (withdrawalHoleNumber > 18) {
+            this.withdrawalHoleNumber = 18;
+        } else {
+            this.withdrawalHoleNumber = withdrawalHoleNumber;
+        }
+    }
+
+    public ScorecardParticipationStatus getParticipationStatus() {
+        return participationStatus;
+    }
+
+    public void setParticipationStatus(ScorecardParticipationStatus participationStatus) {
+        this.participationStatus = participationStatus == null ? ScorecardParticipationStatus.ACTIVE : participationStatus;
+        if (this.participationStatus == ScorecardParticipationStatus.ACTIVE) {
+            this.withdrawalHoleNumber = null;
+        }
     }
 }

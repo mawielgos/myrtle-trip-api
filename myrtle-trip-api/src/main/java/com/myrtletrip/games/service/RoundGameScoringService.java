@@ -1,16 +1,22 @@
 package com.myrtletrip.games.service;
 
+import com.myrtletrip.event.entity.RoundEvent;
+import com.myrtletrip.event.model.RoundEventType;
+import com.myrtletrip.event.service.RoundEventService;
+import com.myrtletrip.games.dto.HoleGameResult;
 import com.myrtletrip.games.dto.RoundGameResult;
+import com.myrtletrip.games.dto.TeamGameResult;
+import com.myrtletrip.games.model.EventScoringContext;
 import com.myrtletrip.games.model.PlayerHoleScoringData;
 import com.myrtletrip.games.model.PlayerScoringData;
 import com.myrtletrip.games.model.RoundScoringData;
 import com.myrtletrip.games.model.TeamScoringData;
 import com.myrtletrip.round.entity.Round;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
@@ -29,56 +35,240 @@ public class RoundGameScoringService {
     private final RoundScoringDataService roundScoringDataService;
     private final ScorecardRepository scorecardRepository;
     private final HoleScoreRepository holeScoreRepository;
-    private final List<RoundGameScorer> scorerList;
+    private final RoundGameScorerRegistry scorerRegistry;
+    private final RoundEventService roundEventService;
     private final TripEditingGuardService tripEditingGuardService;
 
     public RoundGameScoringService(RoundRepository roundRepository,
                                    RoundScoringDataService roundScoringDataService,
                                    ScorecardRepository scorecardRepository,
                                    HoleScoreRepository holeScoreRepository,
-                                   List<RoundGameScorer> scorerList,
+                                   RoundGameScorerRegistry scorerRegistry,
+                                   RoundEventService roundEventService,
                                    TripEditingGuardService tripEditingGuardService) {
         this.roundRepository = roundRepository;
         this.roundScoringDataService = roundScoringDataService;
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
-        this.scorerList = scorerList;
+        this.scorerRegistry = scorerRegistry;
+        this.roundEventService = roundEventService;
         this.tripEditingGuardService = tripEditingGuardService;
     }
 
     @Transactional(readOnly = true)
     public RoundGameResult getRoundResult(Long roundId) {
         Round round = loadRound(roundId);
-        RoundScoringData data = roundScoringDataService.build(round);
+        RoundEvent event = resolvePrimaryTeamOrFallbackEvent(round);
+        return getRoundResult(buildEventScoringContext(round, event));
+    }
 
-        if (!isCompleteForTeamGameScoring(round, data)) {
-            return createUnscoredResult(data);
+    @Transactional(readOnly = true)
+    public RoundGameResult getRoundResult(Long roundId, RoundEventType eventType) {
+        Round round = loadRound(roundId);
+        RoundEvent event = resolveEvent(round, eventType);
+        return getRoundResult(buildEventScoringContext(round, event));
+    }
+
+    private RoundGameResult getRoundResult(EventScoringContext context) {
+        if (context.isIndividualEvent()) {
+            return createIndividualStrokePlayResult(context.getScoringData());
         }
 
-        RoundGameScorer scorer = findScorer(round.getFormat());
-        return scorer.scoreRound(data);
+        if (!isCompleteForTeamGameScoring(context)) {
+            return createUnscoredResult(context.getScoringData());
+        }
+
+        RoundGameScorer scorer = scorerRegistry.getScorer(context.getEventType());
+        return scorer.scoreRound(context.getScoringData());
     }
 
     @Transactional
     public RoundGameResult recalculateRound(Long roundId) {
         Round round = loadRound(roundId);
+        RoundEvent event = resolvePrimaryTeamOrFallbackEvent(round);
+        return recalculateRound(buildEventScoringContext(round, event));
+    }
+
+    @Transactional
+    public RoundGameResult recalculateRound(Long roundId, RoundEventType eventType) {
+        Round round = loadRound(roundId);
+        RoundEvent event = resolveEvent(round, eventType);
+        return recalculateRound(buildEventScoringContext(round, event));
+    }
+
+    /**
+     * Recalculates every active event on a round and returns the event-scoped results.
+     *
+     * Existing callers still use recalculateRound(...) for compatibility, but this
+     * method is the transition point for correction/finalization flows that need to
+     * be fully event-scoped instead of relying on the round's legacy format field.
+     */
+    @Transactional
+    public List<RoundGameResult> recalculateRoundEvents(Long roundId) {
+        Round round = loadRound(roundId);
         tripEditingGuardService.assertCorrectionAllowedForRound(round);
-        RoundScoringData data = roundScoringDataService.build(round);
 
-        clearUsedHoleScoreFlags(round);
+        List<RoundGameResult> results = new ArrayList<RoundGameResult>();
+        for (RoundEvent event : roundEventService.findActiveEventsForRound(round.getId())) {
+            results.add(recalculateRound(buildEventScoringContext(round, event)));
+        }
+        return results;
+    }
 
-        if (!isCompleteForTeamGameScoring(round, data)) {
-            return createUnscoredResult(data);
+    private RoundGameResult recalculateRound(EventScoringContext context) {
+        tripEditingGuardService.assertCorrectionAllowedForRound(context.getRound());
+
+        clearUsedHoleScoreFlags(context);
+
+        if (context.isIndividualEvent()) {
+            return createIndividualStrokePlayResult(context.getScoringData());
         }
 
-        RoundGameScorer scorer = findScorer(round.getFormat());
-        RoundGameResult result = scorer.scoreRound(data);
+        if (!isCompleteForTeamGameScoring(context)) {
+            return createUnscoredResult(context.getScoringData());
+        }
 
-        markUsedHoleScores(round, data);
+        RoundGameScorer scorer = scorerRegistry.getScorer(context.getEventType());
+        RoundGameResult result = scorer.scoreRound(context.getScoringData());
+
+        markUsedHoleScores(context);
 
         return result;
     }
 
+    private EventScoringContext buildEventScoringContext(Round round, RoundEvent event) {
+        RoundEventType eventType = event == null ? RoundEventType.fromLegacyRoundFormat(round.getFormat()) : event.getEventType();
+        RoundScoringData data = roundScoringDataService.build(round);
+        applyEventFormat(data, eventType);
+        return new EventScoringContext(round, event, eventType, data);
+    }
+
+    private void applyEventFormat(RoundScoringData data, RoundEventType eventType) {
+        if (data == null || eventType == null) {
+            return;
+        }
+        data.setFormat(eventType.legacyRoundFormat());
+    }
+
+    private RoundGameResult createIndividualStrokePlayResult(RoundScoringData data) {
+        RoundGameResult result = new RoundGameResult();
+        result.setRoundId(data.getRoundId());
+        result.setFormat(data.getFormat());
+
+        List<TeamGameResult> playerResults = new ArrayList<>();
+        for (TeamScoringData group : data.getTeams()) {
+            for (PlayerScoringData player : group.getPlayers()) {
+                TeamGameResult playerResult = new TeamGameResult();
+                playerResult.setTeamId(player.getPlayerId());
+                playerResult.setTeamName(player.getPlayerName());
+                playerResult.setTotalGross(totalGross(player));
+                playerResult.setTotalNet(totalNet(player));
+
+                for (PlayerHoleScoringData playerHole : player.getHoles()) {
+                    HoleGameResult holeResult = new HoleGameResult();
+                    holeResult.setHoleNumber(playerHole.getHoleNumber());
+                    holeResult.setGrossScore(playerHole.getGross());
+                    holeResult.setNetScore(playerHole.getNet());
+                    holeResult.setPoints(0);
+                    playerResult.getHoleResults().add(holeResult);
+                }
+
+                playerResults.add(playerResult);
+            }
+        }
+
+        playerResults.sort(new Comparator<TeamGameResult>() {
+            @Override
+            public int compare(TeamGameResult a, TeamGameResult b) {
+                Integer aNet = a.getTotalNet();
+                Integer bNet = b.getTotalNet();
+
+                if (aNet == null && bNet == null) {
+                    return compareNames(a.getTeamName(), b.getTeamName());
+                }
+                if (aNet == null) {
+                    return 1;
+                }
+                if (bNet == null) {
+                    return -1;
+                }
+
+                int netCompare = Integer.compare(aNet, bNet);
+                if (netCompare != 0) {
+                    return netCompare;
+                }
+
+                Integer aGross = a.getTotalGross();
+                Integer bGross = b.getTotalGross();
+                if (aGross == null && bGross == null) {
+                    return compareNames(a.getTeamName(), b.getTeamName());
+                }
+                if (aGross == null) {
+                    return 1;
+                }
+                if (bGross == null) {
+                    return -1;
+                }
+
+                int grossCompare = Integer.compare(aGross, bGross);
+                if (grossCompare != 0) {
+                    return grossCompare;
+                }
+
+                return compareNames(a.getTeamName(), b.getTeamName());
+            }
+        });
+
+        assignIndividualPlacements(playerResults);
+        result.setTeams(playerResults);
+        return result;
+    }
+
+    private Integer totalGross(PlayerScoringData player) {
+        int total = 0;
+        for (PlayerHoleScoringData hole : player.getHoles()) {
+            if (hole.getGross() == null) {
+                return null;
+            }
+            total += hole.getGross();
+        }
+        return total;
+    }
+
+    private Integer totalNet(PlayerScoringData player) {
+        int total = 0;
+        for (PlayerHoleScoringData hole : player.getHoles()) {
+            if (hole.getNet() == null) {
+                return null;
+            }
+            total += hole.getNet();
+        }
+        return total;
+    }
+
+    private void assignIndividualPlacements(List<TeamGameResult> playerResults) {
+        Integer previousNet = null;
+        int previousPlacement = 0;
+
+        for (int i = 0; i < playerResults.size(); i++) {
+            TeamGameResult playerResult = playerResults.get(i);
+            Integer net = playerResult.getTotalNet();
+
+            if (net == null) {
+                playerResult.setPlacement(null);
+                continue;
+            }
+
+            int placement = i + 1;
+            if (previousNet != null && previousNet.equals(net)) {
+                placement = previousPlacement;
+            }
+
+            playerResult.setPlacement(placement);
+            previousNet = net;
+            previousPlacement = placement;
+        }
+    }
 
     private RoundGameResult createUnscoredResult(RoundScoringData data) {
         RoundGameResult result = new RoundGameResult();
@@ -95,18 +285,36 @@ public class RoundGameScoringService {
         return result;
     }
 
-    private boolean isCompleteForTeamGameScoring(Round round, RoundScoringData data) {
-        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
-            return isCompleteTeamScrambleData(data);
+    private boolean isCompleteForTeamGameScoring(EventScoringContext context) {
+        if (context.getEventType() == RoundEventType.TEAM_SCRAMBLE) {
+            return isCompleteTeamScrambleData(context.getScoringData());
         }
 
-        return isCompletePlayerScoreData(data);
+        return isCompletePlayerScoreData(context);
     }
 
-    private boolean isCompletePlayerScoreData(RoundScoringData data) {
+    private boolean isCompletePlayerScoreData(EventScoringContext context) {
+        RoundScoringData data = context.getScoringData();
         for (TeamScoringData team : data.getTeams()) {
-            for (PlayerScoringData player : team.getPlayers()) {
-                if (!playerHasCompleteEighteenHoleScore(player)) {
+            for (int holeNumber = 1; holeNumber <= 18; holeNumber++) {
+                int requiredScoreCount = requiredScoreCountForHole(context.getEventType(), holeNumber);
+                int grossCount = 0;
+                int netCount = 0;
+
+                for (PlayerScoringData player : team.getPlayers()) {
+                    PlayerHoleScoringData hole = findPlayerHole(player, holeNumber);
+                    if (hole == null) {
+                        continue;
+                    }
+                    if (hole.getGross() != null) {
+                        grossCount++;
+                    }
+                    if (hole.getNet() != null) {
+                        netCount++;
+                    }
+                }
+
+                if (grossCount < requiredScoreCount || netCount < requiredScoreCount) {
                     return false;
                 }
             }
@@ -115,15 +323,24 @@ public class RoundGameScoringService {
         return true;
     }
 
-    private boolean playerHasCompleteEighteenHoleScore(PlayerScoringData player) {
-        for (int holeNumber = 1; holeNumber <= 18; holeNumber++) {
-            PlayerHoleScoringData hole = findPlayerHole(player, holeNumber);
-            if (hole == null || hole.getGross() == null || hole.getNet() == null) {
-                return false;
-            }
+    private int requiredScoreCountForHole(RoundEventType eventType, int holeNumber) {
+        if (eventType == RoundEventType.TEAM_TWO_LOW_NET) {
+            return 2;
         }
-
-        return true;
+        if (eventType == RoundEventType.TEAM_THREE_LOW_NET) {
+            return 3;
+        }
+        if (eventType == RoundEventType.TEAM_ONE_TWO_THREE) {
+            int cycle = ((holeNumber - 1) % 3) + 1;
+            return cycle;
+        }
+        if (eventType == RoundEventType.TEAM_TWO_MAN_LOW_NET) {
+            return 1;
+        }
+        if (eventType == RoundEventType.TEAM_MIDDLE_MAN) {
+            return 4;
+        }
+        return 1;
     }
 
     private PlayerHoleScoringData findPlayerHole(PlayerScoringData player, int holeNumber) {
@@ -164,12 +381,12 @@ public class RoundGameScoringService {
         return false;
     }
 
-    private void clearUsedHoleScoreFlags(Round round) {
-        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+    private void clearUsedHoleScoreFlags(EventScoringContext context) {
+        if (context.getEventType() == RoundEventType.TEAM_SCRAMBLE) {
             return;
         }
 
-        List<HoleScore> roundHoleScores = holeScoreRepository.findByScorecard_Round_Id(round.getId());
+        List<HoleScore> roundHoleScores = holeScoreRepository.findByScorecard_Round_Id(context.getRound().getId());
         for (HoleScore holeScore : roundHoleScores) {
             holeScore.setUsedInTeamGame(Boolean.FALSE);
         }
@@ -181,21 +398,51 @@ public class RoundGameScoringService {
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
     }
 
-    private RoundGameScorer findScorer(RoundFormat format) {
-        for (RoundGameScorer scorer : scorerList) {
-            if (scorer.supports() == format) {
-                return scorer;
+    private RoundEvent resolvePrimaryTeamOrFallbackEvent(Round round) {
+        List<RoundEvent> events = roundEventService.findActiveEventsForRound(round.getId());
+        for (RoundEvent event : events) {
+            if (event != null && event.getEventType() != null && event.getEventType().isTeamEvent()) {
+                return event;
             }
         }
-        throw new IllegalStateException("No scorer registered for format " + format);
+        if (!events.isEmpty() && events.get(0) != null && events.get(0).getEventType() != null) {
+            return events.get(0);
+        }
+        return null;
     }
 
-    private void markUsedHoleScores(Round round, RoundScoringData data) {
-        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+    private RoundEvent resolveEvent(Round round, RoundEventType requestedEventType) {
+        if (requestedEventType == null) {
+            return resolvePrimaryTeamOrFallbackEvent(round);
+        }
+
+        List<RoundEvent> events = roundEventService.findActiveEventsForRound(round.getId());
+        for (RoundEvent event : events) {
+            if (event != null && requestedEventType == event.getEventType()) {
+                return event;
+            }
+        }
+
+        RoundEventType legacyEventType = RoundEventType.fromLegacyRoundFormat(round.getFormat());
+        if (requestedEventType == legacyEventType) {
+            return null;
+        }
+
+        throw new IllegalArgumentException(
+                "Round " + round.getId() + " does not have active event type " + requestedEventType
+        );
+    }
+
+    private void markUsedHoleScores(EventScoringContext context) {
+        if (context.getEventType() == RoundEventType.TEAM_SCRAMBLE) {
             return;
         }
 
-        clearUsedHoleScoreFlags(round);
+        clearUsedHoleScoreFlags(context);
+
+        Round round = context.getRound();
+        RoundScoringData data = context.getScoringData();
+        RoundEventType eventType = context.getEventType();
 
         List<Scorecard> scorecards = scorecardRepository.findByRound_Id(round.getId());
         Map<Long, Scorecard> scorecardByPlayerId = new HashMap<Long, Scorecard>();
@@ -233,7 +480,7 @@ public class RoundGameScoringService {
                     }
                 });
 
-                List<PlayerHolePick> selected = selectUsedPicks(round.getFormat(), holeNumber, picks);
+                List<PlayerHolePick> selected = selectUsedPicks(eventType, holeNumber, picks);
 
                 for (PlayerHolePick pick : selected) {
                     HoleScore holeScore = findHoleScoreOrThrow(pick.getScorecardId(), holeNumber);
@@ -270,6 +517,17 @@ public class RoundGameScoringService {
         List<PlayerHolePick> picks = new ArrayList<PlayerHolePick>();
 
         for (PlayerScoringData player : team.getPlayers()) {
+            Scorecard scorecard = scorecardByPlayerId.get(player.getPlayerId());
+            if (scorecard == null) {
+                throw new IllegalStateException(
+                        "Missing scorecard for playerId=" + player.getPlayerId()
+                );
+            }
+
+            if (!isScorecardEligibleForTeamHole(scorecard, holeNumber)) {
+                continue;
+            }
+
             PlayerHoleScoringData matchingHole = null;
 
             for (PlayerHoleScoringData hole : player.getHoles()) {
@@ -283,13 +541,6 @@ public class RoundGameScoringService {
                 throw new IllegalStateException(
                         "Missing player hole score for playerId=" + player.getPlayerId()
                                 + ", hole=" + holeNumber
-                );
-            }
-
-            Scorecard scorecard = scorecardByPlayerId.get(player.getPlayerId());
-            if (scorecard == null) {
-                throw new IllegalStateException(
-                        "Missing scorecard for playerId=" + player.getPlayerId()
                 );
             }
 
@@ -307,20 +558,39 @@ public class RoundGameScoringService {
         return picks;
     }
 
-    private List<PlayerHolePick> selectUsedPicks(RoundFormat format,
+
+    private boolean isScorecardEligibleForTeamHole(Scorecard scorecard, int holeNumber) {
+        if (scorecard == null) {
+            return false;
+        }
+        ScorecardParticipationStatus status = scorecard.getParticipationStatus();
+        if (status == null || status == ScorecardParticipationStatus.ACTIVE) {
+            return true;
+        }
+        if (status == ScorecardParticipationStatus.WITHDRAWN) {
+            Integer withdrawalHoleNumber = scorecard.getWithdrawalHoleNumber();
+            return withdrawalHoleNumber != null && withdrawalHoleNumber > 0 && holeNumber <= withdrawalHoleNumber;
+        }
+        return false;
+    }
+
+    private List<PlayerHolePick> selectUsedPicks(RoundEventType eventType,
                                                  int holeNumber,
                                                  List<PlayerHolePick> sortedByNet) {
-        switch (format) {
-            case MIDDLE_MAN:
+        switch (eventType) {
+            case TEAM_MIDDLE_MAN:
                 return selectMiddleMan(sortedByNet);
 
-            case ONE_TWO_THREE:
+            case TEAM_ONE_TWO_THREE:
                 return selectOneTwoThree(holeNumber, sortedByNet);
 
-            case THREE_LOW_NET:
+            case TEAM_THREE_LOW_NET:
                 return selectLowest(sortedByNet, 3);
 
-            case TWO_MAN_LOW_NET:
+            case TEAM_TWO_LOW_NET:
+                return selectLowest(sortedByNet, 2);
+
+            case TEAM_TWO_MAN_LOW_NET:
                 return selectLowest(sortedByNet, 1);
 
             default:

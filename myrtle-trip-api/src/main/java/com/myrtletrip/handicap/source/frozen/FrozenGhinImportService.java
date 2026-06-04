@@ -63,8 +63,16 @@ public class FrozenGhinImportService {
                 continue;
             }
 
-            if (!HANDICAP_METHOD_GHIN.equalsIgnoreCase(player.getHandicapMethod())) {
+            boolean hasGhinMethod = HANDICAP_METHOD_GHIN.equalsIgnoreCase(player.getHandicapMethod());
+            boolean hasGhinNumber = player.getGhinNumber() != null && !player.getGhinNumber().isBlank();
+
+            if (!hasGhinMethod && !hasGhinNumber) {
                 continue;
+            }
+
+            if (hasGhinNumber && !hasGhinMethod) {
+                player.setHandicapMethod(HANDICAP_METHOD_GHIN);
+                playerRepository.save(player);
             }
 
             initializeFrozenGhinForPlayer(player, handicapGroupCode);

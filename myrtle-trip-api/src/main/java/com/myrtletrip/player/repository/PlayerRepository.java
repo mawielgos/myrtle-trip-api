@@ -11,6 +11,12 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
     Optional<Player> findByDisplayNameIgnoreCase(String displayName);
 
     Optional<Player> findByLegacyPlayerNumber(Integer legacyPlayerNumber);
-    
+
     List<Player> findByHandicapMethodIgnoreCase(String handicapMethod);
+
+    Optional<Player> findByNormalizedEmail(String normalizedEmail);
+
+    Optional<Player> findByGhinNumberIgnoreCase(String ghinNumber);
+
+    List<Player> findByNormalizedName(String normalizedName);
 }

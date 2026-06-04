@@ -11,6 +11,8 @@ public class RoundScorecardSummaryResponse {
     private String handicapLabel;
     private Long teamId;
     private String teamName;
+    private Integer teamNumber;
+    private Integer playerOrder;
     private Integer courseHandicap;
     private Integer playingHandicap;
     private Integer grossScore;
@@ -19,6 +21,8 @@ public class RoundScorecardSummaryResponse {
     private String teeName;
     private String currentTeeName;
     private Long roundTeeId;
+    private String participationStatus;
+    private Integer withdrawalHoleNumber;
 
     public Long getScorecardId() { return scorecardId; }
     public void setScorecardId(Long scorecardId) { this.scorecardId = scorecardId; }
@@ -38,6 +42,10 @@ public class RoundScorecardSummaryResponse {
     public void setTeamId(Long teamId) { this.teamId = teamId; }
     public String getTeamName() { return teamName; }
     public void setTeamName(String teamName) { this.teamName = teamName; }
+    public Integer getTeamNumber() { return teamNumber; }
+    public void setTeamNumber(Integer teamNumber) { this.teamNumber = teamNumber; }
+    public Integer getPlayerOrder() { return playerOrder; }
+    public void setPlayerOrder(Integer playerOrder) { this.playerOrder = playerOrder; }
     public Integer getCourseHandicap() { return courseHandicap; }
     public void setCourseHandicap(Integer courseHandicap) { this.courseHandicap = courseHandicap; }
     public Integer getPlayingHandicap() { return playingHandicap; }
@@ -54,4 +62,9 @@ public class RoundScorecardSummaryResponse {
     public void setCurrentTeeName(String currentTeeName) { this.currentTeeName = currentTeeName; }
     public Long getRoundTeeId() { return roundTeeId; }
     public void setRoundTeeId(Long roundTeeId) { this.roundTeeId = roundTeeId; }
+    public String getParticipationStatus() { return participationStatus; }
+    public void setParticipationStatus(String participationStatus) { this.participationStatus = participationStatus; }
+    public Integer getWithdrawalHoleNumber() { return withdrawalHoleNumber; }
+    public void setWithdrawalHoleNumber(Integer withdrawalHoleNumber) { this.withdrawalHoleNumber = withdrawalHoleNumber; }
 }
+

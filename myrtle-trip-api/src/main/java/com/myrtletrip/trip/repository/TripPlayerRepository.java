@@ -22,6 +22,11 @@ public interface TripPlayerRepository extends JpaRepository<TripPlayer, Long> {
 
     Optional<TripPlayer> findByTrip_IdAndPlayer_Id(Long tripId, Long playerId);
 
+    boolean existsByTrip_IdAndPlayer_Id(Long tripId, Long playerId);
+
+    @Query("select coalesce(max(tp.displayOrder), 0) from TripPlayer tp where tp.trip.id = :tripId")
+    Integer findMaxDisplayOrderByTripId(@Param("tripId") Long tripId);
+
     long countByTrip(Trip trip);
 
     @Modifying

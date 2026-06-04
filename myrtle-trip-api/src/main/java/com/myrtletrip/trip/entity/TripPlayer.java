@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
+
 @Entity
 @Table(
         name = "trip_player",
@@ -31,6 +33,10 @@ public class TripPlayer {
 
     @Column(name = "frozen_handicap_index", precision = 5, scale = 1)
     private BigDecimal frozenHandicapIndex;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "participation_status", nullable = false, length = 20)
+    private ScorecardParticipationStatus participationStatus = ScorecardParticipationStatus.ACTIVE;
 
     public Long getId() {
         return id;
@@ -66,5 +72,13 @@ public class TripPlayer {
 
     public void setFrozenHandicapIndex(BigDecimal frozenHandicapIndex) {
         this.frozenHandicapIndex = frozenHandicapIndex;
+    }
+
+    public ScorecardParticipationStatus getParticipationStatus() {
+        return participationStatus == null ? ScorecardParticipationStatus.ACTIVE : participationStatus;
+    }
+
+    public void setParticipationStatus(ScorecardParticipationStatus participationStatus) {
+        this.participationStatus = participationStatus == null ? ScorecardParticipationStatus.ACTIVE : participationStatus;
     }
 }

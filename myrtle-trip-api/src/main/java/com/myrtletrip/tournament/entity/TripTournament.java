@@ -33,6 +33,18 @@ public class TripTournament {
     @Column(name = "standings_label", nullable = false, length = 160)
     private String standingsLabel = "Tournament Standings";
 
+    @Column(name = "low_net_enabled", nullable = false)
+    private Boolean lowNetEnabled = true;
+
+    @Column(name = "low_gross_enabled", nullable = false)
+    private Boolean lowGrossEnabled = false;
+
+    @Column(name = "low_net_name", nullable = false, length = 160)
+    private String lowNetName = "2-Round Low Net";
+
+    @Column(name = "low_gross_name", nullable = false, length = 160)
+    private String lowGrossName = "2-Round Low Gross";
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -89,6 +101,38 @@ public class TripTournament {
 
     public void setStandingsLabel(String standingsLabel) {
         this.standingsLabel = standingsLabel;
+    }
+
+    public Boolean getLowNetEnabled() {
+        return lowNetEnabled;
+    }
+
+    public void setLowNetEnabled(Boolean lowNetEnabled) {
+        this.lowNetEnabled = lowNetEnabled;
+    }
+
+    public Boolean getLowGrossEnabled() {
+        return lowGrossEnabled;
+    }
+
+    public void setLowGrossEnabled(Boolean lowGrossEnabled) {
+        this.lowGrossEnabled = lowGrossEnabled;
+    }
+
+    public String getLowNetName() {
+        return lowNetName;
+    }
+
+    public void setLowNetName(String lowNetName) {
+        this.lowNetName = lowNetName;
+    }
+
+    public String getLowGrossName() {
+        return lowGrossName;
+    }
+
+    public void setLowGrossName(String lowGrossName) {
+        this.lowGrossName = lowGrossName;
     }
 
     public OffsetDateTime getCreatedAt() {

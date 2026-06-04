@@ -4,13 +4,13 @@ import com.myrtletrip.games.service.RoundGameScoringService;
 import com.myrtletrip.prize.service.TripPrizeRecalculationService;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.entity.TeamHoleScore;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scorehistory.service.RoundScoreHistorySyncService;
 import com.myrtletrip.trip.service.TripService;
 import com.myrtletrip.trip.service.TripEditingGuardService;
@@ -36,6 +36,7 @@ public class RoundCompletionService {
     private final TripPrizeRecalculationService tripPrizeRecalculationService;
     private final EntityManager entityManager;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundCompletionService(RoundRepository roundRepository,
             RoundTeamRepository roundTeamRepository,
@@ -47,7 +48,8 @@ public class RoundCompletionService {
             RoundGameScoringService roundGameScoringService,
             TripPrizeRecalculationService tripPrizeRecalculationService,
             EntityManager entityManager,
-            TripEditingGuardService tripEditingGuardService) {
+            TripEditingGuardService tripEditingGuardService,
+            RoundEventCapabilityService roundEventCapabilityService) {
 		this.roundRepository = roundRepository;
 		this.roundTeamRepository = roundTeamRepository;
 		this.scorecardRepository = scorecardRepository;
@@ -59,6 +61,7 @@ public class RoundCompletionService {
         this.tripPrizeRecalculationService = tripPrizeRecalculationService;
         this.entityManager = entityManager;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
 	}
     @Transactional
     public void finalizeRound(Long roundId) {
@@ -71,9 +74,14 @@ public class RoundCompletionService {
             throw new IllegalStateException("Round already finalized");
         }
 
-        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+        RoundEventCapabilityService.RoundEventCapabilities capabilities = roundEventCapabilityService.getCapabilities(round);
+        if (capabilities.hasScrambleEvent() && !capabilities.requiresPlayerScorecards()) {
             finalizeTeamScrambleRound(round);
             return;
+        }
+
+        if (capabilities.hasScrambleEvent()) {
+            validateTeamScrambleScores(round);
         }
 
         // Critical fix:
@@ -86,6 +94,10 @@ public class RoundCompletionService {
         }
 
         for (Scorecard sc : scorecards) {
+            if (!isActiveParticipant(sc)) {
+                continue;
+            }
+
             if (sc.getGrossScore() == null || sc.getAdjustedGrossScore() == null || sc.getNetScore() == null) {
                 throw new IllegalStateException(
                         "Round cannot be finalized until all scorecards are complete. "
@@ -112,16 +124,27 @@ public class RoundCompletionService {
         roundRepository.save(round);
 
         for (Scorecard sc : scorecards) {
-            roundScoreHistorySyncService.syncFinalizedScorecard(sc);
+            if (isActiveParticipant(sc)) {
+                roundScoreHistorySyncService.syncFinalizedScorecard(sc);
+            }
         }
 
         handlePostFinalizationRecalculation(round);
     }
 
     private void finalizeTeamScrambleRound(Round round) {
+        validateTeamScrambleScores(round);
+
+        round.setFinalized(true);
+        roundRepository.save(round);
+
+        handlePostFinalizationRecalculation(round);
+    }
+
+    private void validateTeamScrambleScores(Round round) {
         List<RoundTeam> teams = roundTeamRepository.findByRound_IdOrderByTeamNumberAsc(round.getId());
         if (teams.isEmpty()) {
-            throw new IllegalStateException("TEAM_SCRAMBLE round has no assigned teams");
+            throw new IllegalStateException("Scramble event has no assigned teams");
         }
 
         for (RoundTeam team : teams) {
@@ -134,7 +157,7 @@ public class RoundCompletionService {
 
             if (holeScores.size() != 18) {
                 throw new IllegalStateException(
-                        "TEAM_SCRAMBLE round requires 18 team hole scores for teamId=" + team.getId()
+                        "Scramble event requires 18 team hole scores for teamId=" + team.getId()
                 );
             }
 
@@ -145,24 +168,24 @@ public class RoundCompletionService {
 
                 if (!found) {
                     throw new IllegalStateException(
-                            "TEAM_SCRAMBLE teamId=" + team.getId()
+                            "Scramble teamId=" + team.getId()
                                     + " is missing hole score for hole " + holeNumber
                     );
                 }
             }
         }
-
-        round.setFinalized(true);
-        roundRepository.save(round);
-
-        handlePostFinalizationRecalculation(round);
     }
 
+    private boolean isActiveParticipant(Scorecard scorecard) {
+        return scorecard == null
+                || scorecard.getParticipationStatus() == null
+                || ScorecardParticipationStatus.ACTIVE.equals(scorecard.getParticipationStatus());
+    }
 
     private void handlePostFinalizationRecalculation(Round round) {
         Long tripId = round.getTrip().getId();
 
-        if (round.getFormat() != null && round.getFormat().requiresTeams()) {
+        if (roundEventCapabilityService.requiresTeams(round)) {
             roundGameScoringService.recalculateRound(round.getId());
         }
 

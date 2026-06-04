@@ -11,6 +11,8 @@ public class RoundTeamPlayerResponse {
     private String roundTeeName;
     private Boolean teeOverride;
     private String gender;
+    private String participationStatus;
+    private Integer withdrawalHoleNumber;
 
     public Long getScorecardId() { return scorecardId; }
     public void setScorecardId(Long scorecardId) { this.scorecardId = scorecardId; }
@@ -30,4 +32,8 @@ public class RoundTeamPlayerResponse {
     public void setTeeOverride(Boolean teeOverride) { this.teeOverride = teeOverride; }
     public String getGender() { return gender; }
     public void setGender(String gender) { this.gender = gender; }
+    public String getParticipationStatus() { return participationStatus; }
+    public void setParticipationStatus(String participationStatus) { this.participationStatus = participationStatus; }
+    public Integer getWithdrawalHoleNumber() { return withdrawalHoleNumber; }
+    public void setWithdrawalHoleNumber(Integer withdrawalHoleNumber) { this.withdrawalHoleNumber = withdrawalHoleNumber; }
 }

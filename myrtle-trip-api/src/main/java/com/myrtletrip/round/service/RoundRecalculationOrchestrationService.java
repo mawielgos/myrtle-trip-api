@@ -25,6 +25,7 @@ public class RoundRecalculationOrchestrationService {
     private final ScorecardHandicapService scorecardHandicapService;
     private final TripPrizeRecalculationService tripPrizeRecalculationService;
     private final EntityManager entityManager;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundRecalculationOrchestrationService(RoundRepository roundRepository,
                                                   ScorecardRepository scorecardRepository,
@@ -33,7 +34,8 @@ public class RoundRecalculationOrchestrationService {
                                                   RoundScoreHistorySyncService roundScoreHistorySyncService,
                                                   ScorecardHandicapService scorecardHandicapService,
                                                   TripPrizeRecalculationService tripPrizeRecalculationService,
-                                                  EntityManager entityManager) {
+                                                  EntityManager entityManager,
+                                                  RoundEventCapabilityService roundEventCapabilityService) {
         this.roundRepository = roundRepository;
         this.scorecardRepository = scorecardRepository;
         this.scoringService = scoringService;
@@ -42,6 +44,7 @@ public class RoundRecalculationOrchestrationService {
         this.scorecardHandicapService = scorecardHandicapService;
         this.tripPrizeRecalculationService = tripPrizeRecalculationService;
         this.entityManager = entityManager;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -54,7 +57,11 @@ public class RoundRecalculationOrchestrationService {
 
     @Transactional
     public void handlePostRoundChange(Long roundId) {
-        Round round = roundRepository.findById(roundId)
+        // Serialize full-round recalculation for a round. Tee changes from the score-entry
+        // page can be fired close together; without a deterministic round-level lock, two
+        // concurrent recalculations can update the same hole_score rows in different
+        // orders and PostgreSQL can correctly report a deadlock.
+        Round round = roundRepository.findByIdForUpdate(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
         recalculateCurrentRound(round);
@@ -75,12 +82,12 @@ public class RoundRecalculationOrchestrationService {
     }
 
     private void recalculateCurrentRound(Round round) {
-        List<Scorecard> scorecards = scorecardRepository.findByRound_Id(round.getId());
+        List<Scorecard> scorecards = scorecardRepository.findByRound_IdOrderByIdAsc(round.getId());
         for (Scorecard scorecard : scorecards) {
             scoringService.recalculate(scorecard.getId());
         }
 
-        if (round.getFormat() != null && round.getFormat().requiresTeams()) {
+        if (roundEventCapabilityService.requiresTeams(round)) {
             roundGameScoringService.recalculateRound(round.getId());
         }
     }
@@ -105,7 +112,7 @@ public class RoundRecalculationOrchestrationService {
 
             scorecardHandicapService.refreshRoundHandicapsForCorrection(round.getId());
 
-            if (round.getFormat() != null && round.getFormat().requiresTeams()) {
+            if (roundEventCapabilityService.requiresTeams(round)) {
                 roundGameScoringService.recalculateRound(round.getId());
             }
 

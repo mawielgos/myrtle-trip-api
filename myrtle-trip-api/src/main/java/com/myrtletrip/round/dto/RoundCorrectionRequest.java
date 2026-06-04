@@ -6,6 +6,7 @@ public class RoundCorrectionRequest {
 
     private List<PlayerCorrectionDto> playerCorrections;
     private List<RoundTeeCorrectionRequest> teeCorrections;
+    private List<ParticipationCorrectionDto> participationCorrections;
     private Boolean refreshHandicaps;
 
     public List<PlayerCorrectionDto> getPlayerCorrections() {
@@ -24,12 +25,50 @@ public class RoundCorrectionRequest {
         this.teeCorrections = teeCorrections;
     }
 
+    public List<ParticipationCorrectionDto> getParticipationCorrections() {
+        return participationCorrections;
+    }
+
+    public void setParticipationCorrections(List<ParticipationCorrectionDto> participationCorrections) {
+        this.participationCorrections = participationCorrections;
+    }
+
     public Boolean getRefreshHandicaps() {
         return refreshHandicaps;
     }
 
     public void setRefreshHandicaps(Boolean refreshHandicaps) {
         this.refreshHandicaps = refreshHandicaps;
+    }
+
+    public static class ParticipationCorrectionDto {
+        private Long scorecardId;
+        private String participationStatus;
+        private Integer withdrawalHoleNumber;
+
+        public Long getScorecardId() {
+            return scorecardId;
+        }
+
+        public void setScorecardId(Long scorecardId) {
+            this.scorecardId = scorecardId;
+        }
+
+        public String getParticipationStatus() {
+            return participationStatus;
+        }
+
+        public void setParticipationStatus(String participationStatus) {
+            this.participationStatus = participationStatus;
+        }
+
+        public Integer getWithdrawalHoleNumber() {
+            return withdrawalHoleNumber;
+        }
+
+        public void setWithdrawalHoleNumber(Integer withdrawalHoleNumber) {
+            this.withdrawalHoleNumber = withdrawalHoleNumber;
+        }
     }
 
     public static class PlayerCorrectionDto {

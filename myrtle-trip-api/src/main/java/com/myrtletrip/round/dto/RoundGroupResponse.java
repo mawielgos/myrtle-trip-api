@@ -9,6 +9,7 @@ public class RoundGroupResponse {
     private Long groupId;
     private Integer groupNumber;
     private LocalTime teeTime;
+    private Integer startingHole;
     private List<RoundGroupPlayerResponse> players = new ArrayList<>();
 
     public Long getGroupId() {
@@ -33,6 +34,14 @@ public class RoundGroupResponse {
 
     public void setTeeTime(LocalTime teeTime) {
         this.teeTime = teeTime;
+    }
+
+    public Integer getStartingHole() {
+        return startingHole;
+    }
+
+    public void setStartingHole(Integer startingHole) {
+        this.startingHole = startingHole;
     }
 
     public List<RoundGroupPlayerResponse> getPlayers() {

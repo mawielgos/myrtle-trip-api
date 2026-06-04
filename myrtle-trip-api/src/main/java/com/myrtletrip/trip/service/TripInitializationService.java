@@ -8,6 +8,9 @@ import com.myrtletrip.course.repository.CourseHoleRepository;
 import com.myrtletrip.course.repository.CourseTeeComboHoleRepository;
 import com.myrtletrip.course.repository.CourseRepository;
 import com.myrtletrip.course.repository.CourseTeeRepository;
+import com.myrtletrip.event.entity.RoundEvent;
+import com.myrtletrip.event.model.RoundEventType;
+import com.myrtletrip.event.repository.RoundEventRepository;
 import com.myrtletrip.handicap.service.RoundHandicapService;
 import com.myrtletrip.prize.repository.PrizeScheduleRepository;
 import com.myrtletrip.prize.repository.PrizeWinningRepository;
@@ -29,9 +32,11 @@ import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripPlannedRound;
+import com.myrtletrip.trip.entity.TripPlannedRoundEvent;
 import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.trip.entity.TripStatus;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
+import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
 import com.myrtletrip.trip.repository.TripPlayerRepository;
 import com.myrtletrip.trip.repository.TripRepository;
 import org.springframework.stereotype.Service;
@@ -46,7 +51,9 @@ public class TripInitializationService {
     private final TripRepository tripRepository;
     private final TripPlayerRepository tripPlayerRepository;
     private final TripPlannedRoundRepository tripPlannedRoundRepository;
+    private final TripPlannedRoundEventRepository tripPlannedRoundEventRepository;
     private final RoundRepository roundRepository;
+    private final RoundEventRepository roundEventRepository;
     private final RoundGroupRepository roundGroupRepository;
     private final RoundGroupPlayerRepository roundGroupPlayerRepository;
     private final RoundTeamRepository roundTeamRepository;
@@ -70,7 +77,9 @@ public class TripInitializationService {
             TripRepository tripRepository,
             TripPlayerRepository tripPlayerRepository,
             TripPlannedRoundRepository tripPlannedRoundRepository,
+            TripPlannedRoundEventRepository tripPlannedRoundEventRepository,
             RoundRepository roundRepository,
+            RoundEventRepository roundEventRepository,
             RoundGroupRepository roundGroupRepository,
             RoundGroupPlayerRepository roundGroupPlayerRepository,
             RoundTeamRepository roundTeamRepository,
@@ -93,7 +102,9 @@ public class TripInitializationService {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.tripPlannedRoundRepository = tripPlannedRoundRepository;
+        this.tripPlannedRoundEventRepository = tripPlannedRoundEventRepository;
         this.roundRepository = roundRepository;
+        this.roundEventRepository = roundEventRepository;
         this.roundGroupRepository = roundGroupRepository;
         this.roundGroupPlayerRepository = roundGroupPlayerRepository;
         this.roundTeamRepository = roundTeamRepository;
@@ -185,10 +196,12 @@ public class TripInitializationService {
             round.setCourse(course);
             round.setFormat(pr.getFormat());
             round.setScrambleTeamSize(resolveScrambleTeamSize(pr));
+            round.setScrambleScoreEntryMode("TOTAL");
             round.setHandicapPercent(100);
             round.setFinalized(false);
 
             round = roundRepository.save(round);
+            createRoundEvents(round, pr);
 
             RoundTee defaultRoundTee = createRoundTee(round, course, defaultCourseTee, RoundTeeRole.DEFAULT, "M");
             RoundTee womenDefaultRoundTee = null;
@@ -288,12 +301,73 @@ public class TripInitializationService {
         tripRepository.save(trip);
     }
 
-    private Integer resolveScrambleTeamSize(TripPlannedRound plannedRound) {
-        if (plannedRound == null || plannedRound.getFormat() != com.myrtletrip.round.model.RoundFormat.TEAM_SCRAMBLE) {
-            return 4;
+
+    private void createRoundEvents(Round round, TripPlannedRound plannedRound) {
+        List<TripPlannedRoundEvent> plannedEvents = tripPlannedRoundEventRepository.findByPlannedRound_IdOrderByEventOrderAsc(plannedRound.getId());
+        if (plannedEvents == null || plannedEvents.isEmpty()) {
+            plannedEvents = legacyPlannedRoundEvents(plannedRound);
         }
 
-        Integer size = plannedRound.getScrambleTeamSize();
+        int defaultOrder = 1;
+        for (TripPlannedRoundEvent plannedEvent : plannedEvents) {
+            RoundEventType eventType = plannedEvent.getEventType();
+            if (eventType == null) {
+                continue;
+            }
+
+            Integer teamSize = plannedEvent.getTeamSize() != null
+                    ? plannedEvent.getTeamSize()
+                    : eventType.defaultTeamSize(round.getScrambleTeamSize());
+
+            RoundEvent event = new RoundEvent();
+            event.setRound(round);
+            event.setEventType(eventType);
+            event.setEventName(plannedEvent.getEventName() == null || plannedEvent.getEventName().isBlank()
+                    ? eventType.defaultName(teamSize)
+                    : plannedEvent.getEventName().trim());
+            event.setEventOrder(plannedEvent.getEventOrder() == null ? defaultOrder : plannedEvent.getEventOrder());
+            event.setActive(Boolean.TRUE);
+            event.setUsesGross(eventType.usesGross());
+            event.setUsesNet(eventType.usesNet());
+            event.setUsesTeams(eventType.isTeamEvent());
+            event.setTeamSize(teamSize);
+            event.setHandicapPercent(plannedEvent.getHandicapPercent() == null ? round.getHandicapPercent() : plannedEvent.getHandicapPercent());
+            roundEventRepository.save(event);
+            defaultOrder++;
+        }
+    }
+
+    private List<TripPlannedRoundEvent> legacyPlannedRoundEvents(TripPlannedRound plannedRound) {
+        List<TripPlannedRoundEvent> events = new ArrayList<>();
+        RoundEventType eventType = RoundEventType.fromLegacyRoundFormat(plannedRound.getFormat());
+        Integer teamSize = eventType.defaultTeamSize(plannedRound.getScrambleTeamSize());
+        TripPlannedRoundEvent event = new TripPlannedRoundEvent();
+        event.setPlannedRound(plannedRound);
+        event.setEventType(eventType);
+        event.setEventName(eventType.defaultName(teamSize));
+        event.setEventOrder(1);
+        event.setTeamSize(teamSize);
+        event.setHandicapPercent(null);
+        events.add(event);
+        return events;
+    }
+
+    private Integer resolveScrambleTeamSize(TripPlannedRound plannedRound) {
+        Integer size = null;
+        if (plannedRound != null && plannedRound.getId() != null) {
+            List<TripPlannedRoundEvent> events = tripPlannedRoundEventRepository.findByPlannedRound_IdOrderByEventOrderAsc(plannedRound.getId());
+            if (events != null) {
+                for (TripPlannedRoundEvent event : events) {
+                    if (event != null && event.getEventType() == RoundEventType.TEAM_SCRAMBLE) {
+                        size = event.getTeamSize();
+                        break;
+                    }
+                }
+            }
+        }
+        if (size == null) {
+            size = plannedRound == null ? null : plannedRound.getScrambleTeamSize();
+        }
         if (size == null) {
             return 4;
         }

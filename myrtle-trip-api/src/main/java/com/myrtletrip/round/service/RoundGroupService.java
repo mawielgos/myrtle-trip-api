@@ -12,11 +12,11 @@ import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundGroup;
 import com.myrtletrip.round.entity.RoundGroupPlayer;
 import com.myrtletrip.round.entity.RoundTee;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundGroupRepository;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.trip.service.TripEditingGuardService;
 import jakarta.transaction.Transactional;
@@ -46,6 +46,7 @@ public class RoundGroupService {
     private final RoundTeamAutoAssignmentService roundTeamAutoAssignmentService;
     private final RoundGroupAutoAssignmentService roundGroupAutoAssignmentService;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundGroupService(
             RoundRepository roundRepository,
@@ -57,7 +58,8 @@ public class RoundGroupService {
             RoundTeeProvisioningService roundTeeProvisioningService,
             RoundTeamAutoAssignmentService roundTeamAutoAssignmentService,
             RoundGroupAutoAssignmentService roundGroupAutoAssignmentService,
-            TripEditingGuardService tripEditingGuardService
+            TripEditingGuardService tripEditingGuardService,
+            RoundEventCapabilityService roundEventCapabilityService
     ) {
         this.roundRepository = roundRepository;
         this.roundGroupRepository = roundGroupRepository;
@@ -69,6 +71,7 @@ public class RoundGroupService {
         this.roundTeamAutoAssignmentService = roundTeamAutoAssignmentService;
         this.roundGroupAutoAssignmentService = roundGroupAutoAssignmentService;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -82,7 +85,7 @@ public class RoundGroupService {
 
         List<RoundGroup> groups;
 
-        if (round.getFormat() == RoundFormat.TWO_MAN_LOW_NET) {
+        if (roundEventCapabilityService.requiresTeams(round)) {
             if (!Boolean.TRUE.equals(round.getFinalized())) {
                 roundGroupAutoAssignmentService.syncGroupsFromTeamsIfNeeded(roundId);
             }
@@ -90,8 +93,8 @@ public class RoundGroupService {
         } else {
             groups = roundGroupRepository.findByRound_IdOrderByGroupNumberAsc(roundId);
 
-            if (groups.isEmpty() && !Boolean.TRUE.equals(round.getFinalized())) {
-                groups = initializeGroups(round);
+            if (!Boolean.TRUE.equals(round.getFinalized())) {
+                groups = ensureEnoughGroups(round, groups);
             }
         }
         RoundGroupPageResponse response = new RoundGroupPageResponse();
@@ -126,6 +129,7 @@ public class RoundGroupService {
         Map<Long, Scorecard> scorecardsById = loadScorecardsForRound(roundId);
         Map<Integer, List<RoundGroupAssignmentItemRequest>> groupedAssignments = new HashMap<>();
         Map<Integer, LocalTime> teeTimesByGroupNumber = buildTeeTimesByGroupNumber(request);
+        Map<Integer, Integer> startingHolesByGroupNumber = buildStartingHolesByGroupNumber(request);
 
         for (RoundGroupAssignmentItemRequest item : request.getAssignments()) {
             groupedAssignments
@@ -133,7 +137,19 @@ public class RoundGroupService {
                     .add(item);
         }
 
-        List<Integer> sortedGroupNumbers = new ArrayList<>(groupedAssignments.keySet());
+        Set<Integer> groupNumbersToSave = new HashSet<>();
+        groupNumbersToSave.addAll(groupedAssignments.keySet());
+        groupNumbersToSave.addAll(teeTimesByGroupNumber.keySet());
+        groupNumbersToSave.addAll(startingHolesByGroupNumber.keySet());
+
+        if (!roundEventCapabilityService.isTwoManLowNetRound(round)) {
+            int requiredGroupCount = calculateRequiredGroupCount(round);
+            for (int i = 1; i <= requiredGroupCount; i++) {
+                groupNumbersToSave.add(i);
+            }
+        }
+
+        List<Integer> sortedGroupNumbers = new ArrayList<>(groupNumbersToSave);
         sortedGroupNumbers.sort(Integer::compareTo);
 
         List<RoundGroup> groupsToSave = new ArrayList<>();
@@ -143,8 +159,12 @@ public class RoundGroupService {
             roundGroup.setRound(round);
             roundGroup.setGroupNumber(groupNumber);
             roundGroup.setTeeTime(teeTimesByGroupNumber.get(groupNumber));
+            roundGroup.setStartingHole(startingHolesByGroupNumber.get(groupNumber));
 
             List<RoundGroupAssignmentItemRequest> items = groupedAssignments.get(groupNumber);
+            if (items == null) {
+                items = new ArrayList<>();
+            }
             items.sort(Comparator.comparing(RoundGroupAssignmentItemRequest::getSeatOrder));
 
             for (RoundGroupAssignmentItemRequest item : items) {
@@ -162,7 +182,7 @@ public class RoundGroupService {
 
         applyTeeSelections(round, request, scorecardsById);
 
-        if (round.getFormat() != null && round.getFormat() != RoundFormat.TWO_MAN_LOW_NET) {
+        if (!roundEventCapabilityService.requiresTeams(round)) {
             roundTeamAutoAssignmentService.rebuildTeamsFromGroups(roundId);
         }
 
@@ -185,6 +205,32 @@ public class RoundGroupService {
         }
 
         return result;
+    }
+
+    private Map<Integer, Integer> buildStartingHolesByGroupNumber(RoundGroupAssignmentRequest request) {
+        Map<Integer, Integer> result = new HashMap<>();
+
+        if (request == null || request.getGroupTeeTimes() == null) {
+            return result;
+        }
+
+        for (RoundGroupTeeTimeRequest teeTimeRequest : request.getGroupTeeTimes()) {
+            if (teeTimeRequest == null || teeTimeRequest.getGroupNumber() == null) {
+                continue;
+            }
+
+            result.put(teeTimeRequest.getGroupNumber(), normalizeStartingHole(teeTimeRequest.getStartingHole()));
+        }
+
+        return result;
+    }
+
+    private Integer normalizeStartingHole(Integer startingHole) {
+        if (startingHole == null) {
+            return null;
+        }
+
+        return startingHole == 10 ? 10 : 1;
     }
 
     private void applyTeeSelections(
@@ -277,8 +323,7 @@ public class RoundGroupService {
     }
 
     private List<RoundGroup> initializeGroups(Round round) {
-        int playerCount = scorecardRepository.findByRound_Id(round.getId()).size();
-        int groupCount = (int) Math.ceil(playerCount / 4.0);
+        int groupCount = calculateRequiredGroupCount(round);
 
         List<RoundGroup> groups = new ArrayList<>();
 
@@ -290,6 +335,53 @@ public class RoundGroupService {
         }
 
         return roundGroupRepository.saveAll(groups);
+    }
+
+    private List<RoundGroup> ensureEnoughGroups(Round round, List<RoundGroup> existingGroups) {
+        int requiredGroupCount = calculateRequiredGroupCount(round);
+
+        if (requiredGroupCount <= 0) {
+            return existingGroups;
+        }
+
+        Map<Integer, RoundGroup> existingByGroupNumber = new HashMap<>();
+        for (RoundGroup group : existingGroups) {
+            existingByGroupNumber.put(group.getGroupNumber(), group);
+        }
+
+        List<RoundGroup> groupsToCreate = new ArrayList<>();
+        for (int i = 1; i <= requiredGroupCount; i++) {
+            if (!existingByGroupNumber.containsKey(i)) {
+                RoundGroup group = new RoundGroup();
+                group.setRound(round);
+                group.setGroupNumber(i);
+                groupsToCreate.add(group);
+            }
+        }
+
+        if (!groupsToCreate.isEmpty()) {
+            roundGroupRepository.saveAll(groupsToCreate);
+            roundGroupRepository.flush();
+        }
+
+        return roundGroupRepository.findByRound_IdOrderByGroupNumberAsc(round.getId());
+    }
+
+    private int calculateRequiredGroupCount(Round round) {
+        int playerCount = 0;
+        List<Scorecard> scorecards = scorecardRepository.findByRound_Id(round.getId());
+        for (Scorecard scorecard : scorecards) {
+            if (scorecard == null || scorecard.getParticipationStatus() == null
+                    || scorecard.getParticipationStatus() == ScorecardParticipationStatus.ACTIVE) {
+                playerCount++;
+            }
+        }
+
+        if (playerCount <= 0) {
+            return 0;
+        }
+
+        return (int) Math.ceil(playerCount / 4.0);
     }
 
     private void validateRequest(RoundGroupAssignmentRequest request, Round round) {
@@ -380,6 +472,11 @@ public class RoundGroupService {
             if (!groupNumbers.add(groupNumber)) {
                 throw new IllegalArgumentException("Duplicate tee time row for group " + groupNumber + ".");
             }
+
+            Integer startingHole = teeTimeRequest.getStartingHole();
+            if (startingHole != null && startingHole != 1 && startingHole != 10) {
+                throw new IllegalArgumentException("Starting hole must be 1 or 10 for group " + groupNumber + ".");
+            }
         }
     }
 
@@ -418,6 +515,7 @@ public class RoundGroupService {
         response.setGroupId(group.getId());
         response.setGroupNumber(group.getGroupNumber());
         response.setTeeTime(group.getTeeTime());
+        response.setStartingHole(group.getStartingHole());
 
         List<RoundGroupPlayerResponse> players = new ArrayList<>();
         List<RoundGroupPlayer> sortedPlayers = new ArrayList<>(group.getPlayers());

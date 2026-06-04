@@ -51,16 +51,16 @@ public class RoundHandicapService {
             return BigDecimal.ZERO;
         }
 
-        if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
-            TripPlayer tripPlayer = tripPlayerRepository.findByTrip_IdAndPlayer_Id(trip.getId(), player.getId())
-                    .orElseThrow(() -> new IllegalArgumentException("Trip player not found for trip "
-                            + trip.getId() + " and player " + player.getId()));
+        TripPlayer tripPlayer = tripPlayerRepository.findByTrip_IdAndPlayer_Id(trip.getId(), player.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Trip player not found for trip "
+                        + trip.getId() + " and player " + player.getId()));
 
-            if (tripPlayer.getFrozenHandicapIndex() == null) {
-                throw new IllegalStateException("Frozen GHIN handicap index is required for " + player.getDisplayName());
-            }
-
+        if (tripPlayer.getFrozenHandicapIndex() != null) {
             return tripPlayer.getFrozenHandicapIndex();
+        }
+
+        if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
+            throw new IllegalStateException("Frozen GHIN handicap index is required for " + player.getDisplayName());
         }
 
         return tripHandicapService.calculateTripIndexAsOf(player, handicapGroupCode, round.getRoundDate(), trip.getHandicapMethod());

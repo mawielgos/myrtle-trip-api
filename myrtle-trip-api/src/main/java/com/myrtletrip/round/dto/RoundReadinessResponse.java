@@ -17,11 +17,26 @@ public class RoundReadinessResponse {
     private boolean scorecardsReady;
     private boolean handicapsReady;
     private boolean readyForScoring;
+    private boolean readyForFinalization;
+    private boolean scoreEntryComplete;
     private boolean ready;
+
+    // V1.2 event-capability flags. These are derived from round_event rows
+    // with legacy Round.format as a fallback, so UI/navigation no longer has
+    // to infer behavior from the compatibility format field.
+    private boolean hasTeamEvents;
+    private boolean hasIndividualEvents;
+    private boolean hasScrambleEvent;
+    private boolean hasTwoManLowNetEvent;
+    private boolean requiresTeams;
+    private boolean requiresNetScores;
+    private boolean requiresPlayerScorecards;
+    private Integer expectedTeamSize;
 
     private int scorecardCount;
     private int groupCount;
     private int teamCount;
+    private int missingScoreCount;
 
     private List<String> blockingIssues = new ArrayList<>();
     private List<String> warnings = new ArrayList<>();
@@ -114,6 +129,22 @@ public class RoundReadinessResponse {
         this.readyForScoring = readyForScoring;
     }
 
+    public boolean isReadyForFinalization() {
+        return readyForFinalization;
+    }
+
+    public void setReadyForFinalization(boolean readyForFinalization) {
+        this.readyForFinalization = readyForFinalization;
+    }
+
+    public boolean isScoreEntryComplete() {
+        return scoreEntryComplete;
+    }
+
+    public void setScoreEntryComplete(boolean scoreEntryComplete) {
+        this.scoreEntryComplete = scoreEntryComplete;
+    }
+
     public boolean isReady() {
         return ready;
     }
@@ -121,6 +152,38 @@ public class RoundReadinessResponse {
     public void setReady(boolean ready) {
         this.ready = ready;
     }
+
+    public boolean isHasTeamEvents() { return hasTeamEvents; }
+
+    public void setHasTeamEvents(boolean hasTeamEvents) { this.hasTeamEvents = hasTeamEvents; }
+
+    public boolean isHasIndividualEvents() { return hasIndividualEvents; }
+
+    public void setHasIndividualEvents(boolean hasIndividualEvents) { this.hasIndividualEvents = hasIndividualEvents; }
+
+    public boolean isHasScrambleEvent() { return hasScrambleEvent; }
+
+    public void setHasScrambleEvent(boolean hasScrambleEvent) { this.hasScrambleEvent = hasScrambleEvent; }
+
+    public boolean isHasTwoManLowNetEvent() { return hasTwoManLowNetEvent; }
+
+    public void setHasTwoManLowNetEvent(boolean hasTwoManLowNetEvent) { this.hasTwoManLowNetEvent = hasTwoManLowNetEvent; }
+
+    public boolean isRequiresTeams() { return requiresTeams; }
+
+    public void setRequiresTeams(boolean requiresTeams) { this.requiresTeams = requiresTeams; }
+
+    public boolean isRequiresNetScores() { return requiresNetScores; }
+
+    public void setRequiresNetScores(boolean requiresNetScores) { this.requiresNetScores = requiresNetScores; }
+
+    public boolean isRequiresPlayerScorecards() { return requiresPlayerScorecards; }
+
+    public void setRequiresPlayerScorecards(boolean requiresPlayerScorecards) { this.requiresPlayerScorecards = requiresPlayerScorecards; }
+
+    public Integer getExpectedTeamSize() { return expectedTeamSize; }
+
+    public void setExpectedTeamSize(Integer expectedTeamSize) { this.expectedTeamSize = expectedTeamSize; }
 
     public int getScorecardCount() {
         return scorecardCount;
@@ -144,6 +207,14 @@ public class RoundReadinessResponse {
 
     public void setTeamCount(int teamCount) {
         this.teamCount = teamCount;
+    }
+
+    public int getMissingScoreCount() {
+        return missingScoreCount;
+    }
+
+    public void setMissingScoreCount(int missingScoreCount) {
+        this.missingScoreCount = missingScoreCount;
     }
 
     public List<String> getBlockingIssues() {

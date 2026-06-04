@@ -4,15 +4,15 @@ import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
 import com.myrtletrip.games.model.RoundScoringData;
 import com.myrtletrip.games.model.TeamScoringData;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.event.model.RoundEventType;
 import org.springframework.stereotype.Service;
 
 @Service
 public class TeamScrambleScorer extends AbstractTeamGameScorer {
 
     @Override
-    public RoundFormat supports() {
-        return RoundFormat.TEAM_SCRAMBLE;
+    public RoundEventType supports() {
+        return RoundEventType.TEAM_SCRAMBLE;
     }
 
     @Override

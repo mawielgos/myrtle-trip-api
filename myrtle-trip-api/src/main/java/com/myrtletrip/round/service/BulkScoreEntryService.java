@@ -1,9 +1,11 @@
 package com.myrtletrip.round.service;
 
+import com.myrtletrip.permissions.service.RoundCapabilityService;
 import com.myrtletrip.round.dto.BulkRoundScoreRequest;
 import com.myrtletrip.round.dto.PlayerBulkScoreDto;
 import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.service.ScoringService;
@@ -23,21 +25,33 @@ public class BulkScoreEntryService {
     private final ScoringService scoringService;
     private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundCapabilityService roundCapabilityService;
 
     public BulkScoreEntryService(ScorecardRepository scorecardRepository,
                                  HoleScoreRepository holeScoreRepository,
                                  ScoringService scoringService,
                                  RoundRecalculationOrchestrationService roundRecalculationOrchestrationService,
-                                 TripEditingGuardService tripEditingGuardService) {
+                                 TripEditingGuardService tripEditingGuardService,
+                                 RoundCapabilityService roundCapabilityService) {
         this.scorecardRepository = scorecardRepository;
         this.holeScoreRepository = holeScoreRepository;
         this.scoringService = scoringService;
         this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundCapabilityService = roundCapabilityService;
     }
 
     @Transactional
     public void saveBulkScores(Long roundId, BulkRoundScoreRequest request) {
+        saveBulkScoresInternal(roundId, request, false);
+    }
+
+    @Transactional
+    public void saveBulkScoreCorrections(Long roundId, BulkRoundScoreRequest request) {
+        saveBulkScoresInternal(roundId, request, true);
+    }
+
+    private void saveBulkScoresInternal(Long roundId, BulkRoundScoreRequest request, boolean correctionMode) {
         if (request == null || request.getScorecards() == null || request.getScorecards().isEmpty()) {
             throw new IllegalArgumentException("No scorecards supplied");
         }
@@ -47,7 +61,11 @@ public class BulkScoreEntryService {
             throw new IllegalArgumentException("Round not found or has no scorecards: " + roundId);
         }
 
-        tripEditingGuardService.assertCorrectionAllowedForRound(roundScorecards.get(0).getRound());
+        if (correctionMode) {
+            tripEditingGuardService.assertCorrectionAllowedForRound(roundScorecards.get(0).getRound());
+        } else {
+            roundCapabilityService.assertCanSaveScores(roundScorecards.get(0).getRound());
+        }
 
         Map<Long, Scorecard> scorecardByPlayerId = new HashMap<>();
         for (Scorecard scorecard : roundScorecards) {
@@ -111,6 +129,9 @@ public class BulkScoreEntryService {
         for (int i = 0; i < 18; i++) {
             int holeNumber = i + 1;
             Integer strokes = holes.get(i);
+            if (!isHoleOpenForScoreEntry(scorecard, holeNumber)) {
+                strokes = null;
+            }
 
             HoleScore holeScore = existingByHole.get(holeNumber);
             if (holeScore == null) {
@@ -122,5 +143,19 @@ public class BulkScoreEntryService {
             holeScore.setStrokes(strokes);
             holeScoreRepository.save(holeScore);
         }
+    }
+
+    private boolean isHoleOpenForScoreEntry(Scorecard scorecard, int holeNumber) {
+        if (scorecard == null || scorecard.getParticipationStatus() == null) {
+            return true;
+        }
+        if (ScorecardParticipationStatus.ACTIVE.equals(scorecard.getParticipationStatus())) {
+            return true;
+        }
+        if (ScorecardParticipationStatus.WITHDRAWN.equals(scorecard.getParticipationStatus())) {
+            Integer withdrawalHoleNumber = scorecard.getWithdrawalHoleNumber();
+            return withdrawalHoleNumber != null && withdrawalHoleNumber > 0 && holeNumber <= withdrawalHoleNumber;
+        }
+        return false;
     }
 }

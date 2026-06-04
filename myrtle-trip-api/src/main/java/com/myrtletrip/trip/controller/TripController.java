@@ -9,6 +9,7 @@ import com.myrtletrip.trip.dto.TripBillInventoryResponse;
 import com.myrtletrip.trip.dto.TripListResponse;
 import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
 import com.myrtletrip.trip.dto.TripPlayerResponse;
+import com.myrtletrip.trip.dto.TripPlayerParticipationRequest;
 import com.myrtletrip.trip.dto.TripRoundListResponse;
 import com.myrtletrip.trip.dto.TripSetupRequest;
 import com.myrtletrip.scorehistory.dto.DbScoreHistoryImportCandidateResponse;
@@ -91,6 +92,17 @@ public class TripController {
         return tripService.getTripPlayers(tripId);
     }
 
+    @PatchMapping("/{tripId}/players/{playerId}/participation")
+    public List<TripPlayerResponse> updateTripPlayerParticipation(@PathVariable Long tripId,
+                                                                  @PathVariable Long playerId,
+                                                                  @RequestBody TripPlayerParticipationRequest request) {
+        return tripService.updateTripPlayerParticipation(
+                tripId,
+                playerId,
+                request == null ? null : request.getParticipationStatus()
+        );
+    }
+
     @GetMapping("/{tripId}/planned-rounds")
     public List<TripPlannedRoundResponse> getPlannedRounds(@PathVariable Long tripId) {
         return tripService.getPlannedRounds(tripId);
@@ -108,8 +120,9 @@ public class TripController {
     }
 
     @GetMapping("/{tripId}/tournament-standings")
-    public TournamentStandingsResponse getTournamentStandings(@PathVariable Long tripId) {
-        return tournamentStandingsService.getTournamentStandings(tripId);
+    public TournamentStandingsResponse getTournamentStandings(@PathVariable Long tripId,
+                                                              @RequestParam(required = false) String competition) {
+        return tournamentStandingsService.getTournamentStandings(tripId, competition);
     }
 
     // Backward-compatible alias for older UI routes/bookmarks.

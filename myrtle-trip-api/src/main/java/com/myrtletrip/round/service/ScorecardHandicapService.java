@@ -24,19 +24,22 @@ public class ScorecardHandicapService {
     private final ScoringService scoringService;
     private final RoundTeeResolver roundTeeResolver;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundTeeProvisioningService roundTeeProvisioningService;
 
     public ScorecardHandicapService(ScorecardRepository scorecardRepository,
                                     RoundTeeRepository roundTeeRepository,
                                     RoundHandicapService roundHandicapService,
                                     ScoringService scoringService,
                                     RoundTeeResolver roundTeeResolver,
-                                    TripEditingGuardService tripEditingGuardService) {
+                                    TripEditingGuardService tripEditingGuardService,
+                                    RoundTeeProvisioningService roundTeeProvisioningService) {
         this.scorecardRepository = scorecardRepository;
         this.roundTeeRepository = roundTeeRepository;
         this.roundHandicapService = roundHandicapService;
         this.scoringService = scoringService;
         this.roundTeeResolver = roundTeeResolver;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundTeeProvisioningService = roundTeeProvisioningService;
     }
 
     @Transactional
@@ -121,7 +124,10 @@ public class ScorecardHandicapService {
     }
 
     private void refreshRoundHandicapsInternal(Long roundId, boolean allowFinalized) {
-        List<Scorecard> scorecards = scorecardRepository.findByRound_Id(roundId);
+        List<Scorecard> scorecards = scorecardRepository.findByRound_IdOrderByIdAsc(roundId);
+        if (!scorecards.isEmpty()) {
+            roundTeeProvisioningService.refreshRoundTeeSnapshotsFromCourseMaster(scorecards.get(0).getRound());
+        }
 
         for (Scorecard scorecard : scorecards) {
             if (!allowFinalized && Boolean.TRUE.equals(scorecard.getRound().getFinalized())) {

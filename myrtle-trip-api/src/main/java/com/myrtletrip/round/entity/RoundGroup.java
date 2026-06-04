@@ -29,6 +29,9 @@ public class RoundGroup {
     @Column(name = "tee_time")
     private LocalTime teeTime;
 
+    @Column(name = "starting_hole")
+    private Integer startingHole;
+
     @OneToMany(
             mappedBy = "roundGroup",
             cascade = CascadeType.ALL,
@@ -69,6 +72,14 @@ public class RoundGroup {
 
     public void setTeeTime(LocalTime teeTime) {
         this.teeTime = teeTime;
+    }
+
+    public Integer getStartingHole() {
+        return startingHole;
+    }
+
+    public void setStartingHole(Integer startingHole) {
+        this.startingHole = startingHole;
     }
 
     public List<RoundGroupPlayer> getPlayers() {

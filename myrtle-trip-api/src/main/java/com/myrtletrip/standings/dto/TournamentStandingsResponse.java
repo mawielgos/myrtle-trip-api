@@ -9,6 +9,8 @@ public class TournamentStandingsResponse {
     private String tripName;
     private String tournamentName;
     private String standingsLabel;
+    private String competitionType;
+    private String competitionLabel;
     private Integer completedRounds;
     private Integer requiredRounds;
     private Boolean leaderboardFinal;
@@ -47,6 +49,11 @@ public class TournamentStandingsResponse {
     public void setStandingsLabel(String standingsLabel) {
         this.standingsLabel = standingsLabel;
     }
+
+    public String getCompetitionType() { return competitionType; }
+    public void setCompetitionType(String competitionType) { this.competitionType = competitionType; }
+    public String getCompetitionLabel() { return competitionLabel; }
+    public void setCompetitionLabel(String competitionLabel) { this.competitionLabel = competitionLabel; }
 
     public Integer getCompletedRounds() {
         return completedRounds;

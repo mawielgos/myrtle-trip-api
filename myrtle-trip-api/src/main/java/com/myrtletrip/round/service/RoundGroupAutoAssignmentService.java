@@ -5,7 +5,6 @@ import com.myrtletrip.round.entity.RoundGroup;
 import com.myrtletrip.round.entity.RoundGroupPlayer;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTeamPlayer;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundGroupPlayerRepository;
 import com.myrtletrip.round.repository.RoundGroupRepository;
 import com.myrtletrip.round.repository.RoundRepository;
@@ -14,8 +13,11 @@ import com.myrtletrip.round.repository.RoundTeamRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RoundGroupAutoAssignmentService {
@@ -25,19 +27,22 @@ public class RoundGroupAutoAssignmentService {
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final RoundGroupRepository roundGroupRepository;
     private final RoundGroupPlayerRepository roundGroupPlayerRepository;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundGroupAutoAssignmentService(
             RoundRepository roundRepository,
             RoundTeamRepository roundTeamRepository,
             RoundTeamPlayerRepository roundTeamPlayerRepository,
             RoundGroupRepository roundGroupRepository,
-            RoundGroupPlayerRepository roundGroupPlayerRepository
+            RoundGroupPlayerRepository roundGroupPlayerRepository,
+            RoundEventCapabilityService roundEventCapabilityService
     ) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.roundGroupRepository = roundGroupRepository;
         this.roundGroupPlayerRepository = roundGroupPlayerRepository;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -45,7 +50,8 @@ public class RoundGroupAutoAssignmentService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
-        if (round.getFormat() != RoundFormat.TWO_MAN_LOW_NET && round.getFormat() != RoundFormat.TEAM_SCRAMBLE) {
+        RoundEventCapabilityService.RoundEventCapabilities capabilities = roundEventCapabilityService.getCapabilities(round);
+        if (!capabilities.requiresTeams()) {
             return;
         }
 
@@ -59,17 +65,18 @@ public class RoundGroupAutoAssignmentService {
             return;
         }
 
-        if (round.getFormat() == RoundFormat.TWO_MAN_LOW_NET) {
+        if (capabilities.hasTwoManLowNetEvent()) {
             syncTwoManGroups(round, roundId, teams);
             return;
         }
 
-        if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
-            syncScrambleGroups(round, roundId, teams);
+        if (capabilities.expectedTeamSize() == 4) {
+            syncOneGroupPerTeam(round, roundId, teams);
         }
     }
 
     private void syncTwoManGroups(Round round, Long roundId, List<RoundTeam> teams) {
+        Map<Integer, GroupLogistics> existingLogisticsByGroupNumber = loadExistingLogisticsByGroupNumber(roundId);
         List<RoundTeam> completeTeams = new ArrayList<>();
 
         for (RoundTeam team : teams) {
@@ -105,6 +112,7 @@ public class RoundGroupAutoAssignmentService {
             RoundGroup group = new RoundGroup();
             group.setRound(round);
             group.setGroupNumber(groupNumber);
+            applyExistingLogistics(group, existingLogisticsByGroupNumber.get(groupNumber));
 
             addGroupPlayer(group, firstTeamPlayers.get(0), 1);
             addGroupPlayer(group, firstTeamPlayers.get(1), 2);
@@ -116,10 +124,11 @@ public class RoundGroupAutoAssignmentService {
         }
     }
 
-    private void syncScrambleGroups(Round round, Long roundId, List<RoundTeam> teams) {
+    private void syncOneGroupPerTeam(Round round, Long roundId, List<RoundTeam> teams) {
+        Map<Integer, GroupLogistics> existingLogisticsByGroupNumber = loadExistingLogisticsByGroupNumber(roundId);
         clearExistingGroups(roundId);
 
-        int expectedTeamSize = resolveScrambleTeamSize(round);
+        int expectedTeamSize = resolveExpectedTeamSize(round);
         int groupNumber = 1;
 
         for (RoundTeam team : teams) {
@@ -130,13 +139,27 @@ public class RoundGroupAutoAssignmentService {
             List<RoundTeamPlayer> teamPlayers =
                     roundTeamPlayerRepository.findByRoundTeam_IdOrderByPlayerOrderAsc(team.getId());
 
-            if (teamPlayers == null || teamPlayers.size() != expectedTeamSize) {
+            if (teamPlayers == null || teamPlayers.isEmpty()) {
+                continue;
+            }
+
+            // Four-player team games use the team as the physical tee-sheet group.
+            // A three-player short team is valid for tee-sheet grouping; readiness/scoring
+            // separately decide whether a ghost-player or extra-shot exception is required.
+            if (teamPlayers.size() > expectedTeamSize) {
+                continue;
+            }
+            if (expectedTeamSize == 4 && teamPlayers.size() < 3) {
+                continue;
+            }
+            if (expectedTeamSize != 4 && teamPlayers.size() != expectedTeamSize) {
                 continue;
             }
 
             RoundGroup group = new RoundGroup();
             group.setRound(round);
             group.setGroupNumber(groupNumber);
+            applyExistingLogistics(group, existingLogisticsByGroupNumber.get(groupNumber));
 
             int seatOrder = 1;
             for (RoundTeamPlayer teamPlayer : teamPlayers) {
@@ -149,11 +172,40 @@ public class RoundGroupAutoAssignmentService {
         }
     }
 
-    private int resolveScrambleTeamSize(Round round) {
-        if (round == null || round.getScrambleTeamSize() == null || round.getScrambleTeamSize() < 1) {
-            return 4;
+    private int resolveExpectedTeamSize(Round round) {
+        int size = roundEventCapabilityService.expectedTeamSize(round);
+        return size < 1 ? 4 : size;
+    }
+
+    private Map<Integer, GroupLogistics> loadExistingLogisticsByGroupNumber(Long roundId) {
+        Map<Integer, GroupLogistics> result = new HashMap<>();
+
+        List<RoundGroup> existingGroups = roundGroupRepository.findByRound_IdOrderByGroupNumberAsc(roundId);
+        if (existingGroups == null || existingGroups.isEmpty()) {
+            return result;
         }
-        return round.getScrambleTeamSize();
+
+        for (RoundGroup existingGroup : existingGroups) {
+            if (existingGroup == null || existingGroup.getGroupNumber() == null) {
+                continue;
+            }
+
+            result.put(
+                    existingGroup.getGroupNumber(),
+                    new GroupLogistics(existingGroup.getTeeTime(), existingGroup.getStartingHole())
+            );
+        }
+
+        return result;
+    }
+
+    private void applyExistingLogistics(RoundGroup group, GroupLogistics logistics) {
+        if (group == null || logistics == null) {
+            return;
+        }
+
+        group.setTeeTime(logistics.teeTime);
+        group.setStartingHole(logistics.startingHole);
     }
 
     private void addGroupPlayer(RoundGroup group, RoundTeamPlayer teamPlayer, int seatOrder) {
@@ -173,5 +225,15 @@ public class RoundGroupAutoAssignmentService {
 
         roundGroupRepository.deleteByRound_Id(roundId);
         roundGroupRepository.flush();
+    }
+
+    private static class GroupLogistics {
+        private final LocalTime teeTime;
+        private final Integer startingHole;
+
+        private GroupLogistics(LocalTime teeTime, Integer startingHole) {
+            this.teeTime = teeTime;
+            this.startingHole = startingHole;
+        }
     }
  }

@@ -4,7 +4,7 @@ import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
 import com.myrtletrip.games.model.RoundScoringData;
 import com.myrtletrip.games.model.TeamScoringData;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.event.model.RoundEventType;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -13,8 +13,8 @@ import java.util.List;
 public class OneTwoThreeScorer extends AbstractTeamGameScorer {
 
     @Override
-    public RoundFormat supports() {
-        return RoundFormat.ONE_TWO_THREE;
+    public RoundEventType supports() {
+        return RoundEventType.TEAM_ONE_TWO_THREE;
     }
 
     @Override

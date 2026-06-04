@@ -36,23 +36,30 @@ public class CourseHandicapService {
     }
 
     private BigDecimal resolveCourseRating(RoundTee roundTee, String gender) {
-        if (roundTee.getSourceCourseTee() != null) {
+        if ("F".equalsIgnoreCase(normalizeGender(gender)) && roundTee.getSourceCourseTee() != null) {
             return roundTee.getSourceCourseTee().getRatingForGender(gender);
         }
         return roundTee.getCourseRating();
     }
 
     private Integer resolveSlope(RoundTee roundTee, String gender) {
-        if (roundTee.getSourceCourseTee() != null) {
+        if ("F".equalsIgnoreCase(normalizeGender(gender)) && roundTee.getSourceCourseTee() != null) {
             return roundTee.getSourceCourseTee().getSlopeForGender(gender);
         }
         return roundTee.getSlope();
     }
 
     private Integer resolveParTotal(RoundTee roundTee, String gender) {
-        if (roundTee.getSourceCourseTee() != null) {
+        if ("F".equalsIgnoreCase(normalizeGender(gender)) && roundTee.getSourceCourseTee() != null) {
             return roundTee.getSourceCourseTee().getParForGender(gender);
         }
         return roundTee.getParTotal();
+    }
+
+    private String normalizeGender(String gender) {
+        if (gender == null || gender.trim().isEmpty()) {
+            return "M";
+        }
+        return gender.trim().toUpperCase();
     }
 }

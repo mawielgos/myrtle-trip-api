@@ -1,9 +1,11 @@
 package com.myrtletrip.round.service;
 
 import com.myrtletrip.course.entity.CourseTee;
+import com.myrtletrip.permissions.service.RoundCapabilityService;
 import com.myrtletrip.handicap.service.TripHandicapService;
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.round.dto.RoundScrambleSeedingRoundResponse;
+import com.myrtletrip.round.dto.ScorecardParticipationRequest;
 import com.myrtletrip.round.dto.RoundTeamAssignmentPageResponse;
 import com.myrtletrip.round.dto.SaveRoundScrambleSeedingRequest;
 import com.myrtletrip.round.dto.RoundTeamPlayerResponse;
@@ -20,15 +22,22 @@ import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
+import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.trip.entity.TripPlannedRound;
 import com.myrtletrip.trip.entity.TripStatus;
+import com.myrtletrip.trip.repository.TripPlayerRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
+import com.myrtletrip.trip.entity.TripPlannedRoundEvent;
+import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
+import com.myrtletrip.event.model.RoundEventType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -50,8 +59,12 @@ public class RoundTeamAssignmentService {
     private final RoundTeeResolver roundTeeResolver;
     private final RoundTeeProvisioningService roundTeeProvisioningService;
     private final TripHandicapService tripHandicapService;
+    private final TripPlayerRepository tripPlayerRepository;
     private final TripPlannedRoundRepository tripPlannedRoundRepository;
     private final RoundScrambleSeedRoundRepository roundScrambleSeedRoundRepository;
+    private final TripPlannedRoundEventRepository tripPlannedRoundEventRepository;
+    private final RoundCapabilityService roundCapabilityService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundTeamAssignmentService(
             RoundRepository roundRepository,
@@ -63,8 +76,12 @@ public class RoundTeamAssignmentService {
             RoundTeeResolver roundTeeResolver,
             RoundTeeProvisioningService roundTeeProvisioningService,
             TripHandicapService tripHandicapService,
+            TripPlayerRepository tripPlayerRepository,
             TripPlannedRoundRepository tripPlannedRoundRepository,
-            RoundScrambleSeedRoundRepository roundScrambleSeedRoundRepository
+            RoundScrambleSeedRoundRepository roundScrambleSeedRoundRepository,
+            TripPlannedRoundEventRepository tripPlannedRoundEventRepository,
+            RoundCapabilityService roundCapabilityService,
+            RoundEventCapabilityService roundEventCapabilityService
     ) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
@@ -75,8 +92,12 @@ public class RoundTeamAssignmentService {
         this.roundTeeResolver = roundTeeResolver;
         this.roundTeeProvisioningService = roundTeeProvisioningService;
         this.tripHandicapService = tripHandicapService;
+        this.tripPlayerRepository = tripPlayerRepository;
         this.tripPlannedRoundRepository = tripPlannedRoundRepository;
         this.roundScrambleSeedRoundRepository = roundScrambleSeedRoundRepository;
+        this.tripPlannedRoundEventRepository = tripPlannedRoundEventRepository;
+        this.roundCapabilityService = roundCapabilityService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -87,13 +108,21 @@ public class RoundTeamAssignmentService {
         roundTeeProvisioningService.ensureRoundTeeOptions(round);
 
         List<RoundTeam> teams = roundTeamRepository.findByRound_IdOrderByTeamNumberAsc(roundId);
-        List<Scorecard> scorecards = scorecardRepository.findByRound_Id(roundId);
+        List<Scorecard> allScorecards = scorecardRepository.findByRound_Id(roundId);
+        List<Scorecard> scorecards = allScorecards.stream()
+                .filter(this::isActiveScorecard)
+                .toList();
+        List<Scorecard> inactiveScorecards = allScorecards.stream()
+                .filter(scorecard -> !isActiveScorecard(scorecard))
+                .toList();
 
         RoundTeamAssignmentPageResponse response = new RoundTeamAssignmentPageResponse();
         response.setRoundId(round.getId());
         response.setDefaultRoundTeeId(round.getDefaultRoundTee() == null ? null : round.getDefaultRoundTee().getId());
         response.setScrambleTeamSize(resolveScrambleTeamSize(round));
         response.setScrambleSeedingMethod(resolveScrambleSeedingMethod(round));
+        response.setScrambleHandicapDate(resolveScrambleHandicapDate(round));
+        response.setCapabilities(roundCapabilityService.build(round));
 
         LocalDate seedingAsOfDate = determineSeedingAsOfDate(round);
         response.setSeedingAsOfDate(seedingAsOfDate);
@@ -128,6 +157,10 @@ public class RoundTeamAssignmentService {
 
         response.setTeams(teamResponses);
         response.setUnassignedPlayers(unassignedPlayers);
+        response.setInactivePlayers(inactiveScorecards.stream()
+                .sorted(Comparator.comparing(scorecard -> buildPlayerName(scorecard.getPlayer()), String.CASE_INSENSITIVE_ORDER))
+                .map(scorecard -> mapUnavailablePlayer(scorecard, round, seedingAsOfDate))
+                .toList());
 
         return response;
     }
@@ -137,15 +170,10 @@ public class RoundTeamAssignmentService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
-        if (round.getFormat() == null || !"TEAM_SCRAMBLE".equals(round.getFormat().name())) {
-            throw new IllegalStateException("Scramble seeding rounds can only be changed for a Scramble round.");
+        if (!roundEventCapabilityService.isScrambleRound(round)) {
+            throw new IllegalStateException("Scramble seeding rounds can only be changed for a round with a Scramble event.");
         }
-        if (Boolean.TRUE.equals(round.getFinalized())) {
-            throw new IllegalStateException("Cannot change Scramble seeding rounds after this round is finalized.");
-        }
-        if (round.getTrip() != null && TripStatus.COMPLETE.equals(round.getTrip().getStatus())) {
-            throw new IllegalStateException("Trip is complete. Scramble seeding rounds are locked.");
-        }
+        roundCapabilityService.assertCanEditScrambleSetup(round);
         if (round.getTrip() == null || round.getTrip().getId() == null) {
             throw new IllegalStateException("Round is not linked to a trip.");
         }
@@ -163,6 +191,9 @@ public class RoundTeamAssignmentService {
 
         if (request != null && request.getSeedingMethod() != null) {
             round.setScrambleSeedingMethod(normalizeScrambleSeedingMethod(request.getSeedingMethod()));
+        }
+        if (request != null && request.getScrambleHandicapDate() != null) {
+            round.setScrambleHandicapDate(request.getScrambleHandicapDate());
         }
         roundRepository.save(round);
 
@@ -196,10 +227,72 @@ public class RoundTeamAssignmentService {
         return getAssignmentPage(roundId);
     }
 
+
+    @Transactional
+    public RoundTeamAssignmentPageResponse updateScorecardParticipation(Long roundId, Long scorecardId, ScorecardParticipationRequest request) {
+        Round round = roundRepository.findById(roundId)
+                .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
+        roundCapabilityService.assertCanAssignTeams(round);
+
+        Scorecard scorecard = scorecardRepository.findById(scorecardId)
+                .orElseThrow(() -> new IllegalArgumentException("Scorecard not found: " + scorecardId));
+        if (scorecard.getRound() == null || scorecard.getRound().getId() == null
+                || !scorecard.getRound().getId().equals(roundId)) {
+            throw new IllegalArgumentException("Scorecard does not belong to this round.");
+        }
+
+        ScorecardParticipationStatus nextStatus = parseParticipationStatus(request == null ? null : request.getParticipationStatus());
+        scorecard.setParticipationStatus(nextStatus);
+        if (nextStatus == ScorecardParticipationStatus.WITHDRAWN) {
+            scorecard.setWithdrawalHoleNumber(normalizeWithdrawalHoleNumber(request == null ? null : request.getWithdrawalHoleNumber()));
+        } else {
+            scorecard.setWithdrawalHoleNumber(null);
+        }
+        if (nextStatus != ScorecardParticipationStatus.ACTIVE) {
+            scorecard.setTeam(null);
+            removeTeamPlayerRows(roundId, scorecard.getPlayer() == null ? null : scorecard.getPlayer().getId());
+        }
+        scorecardRepository.save(scorecard);
+        return getAssignmentPage(roundId);
+    }
+
+    private ScorecardParticipationStatus parseParticipationStatus(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return ScorecardParticipationStatus.ACTIVE;
+        }
+        try {
+            return ScorecardParticipationStatus.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Unsupported participation status: " + value);
+        }
+    }
+
+    private Integer normalizeWithdrawalHoleNumber(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        if (value < 0 || value > 18) {
+            throw new IllegalArgumentException("Withdrawal hole must be between 0 and 18.");
+        }
+        return value;
+    }
+
+    private void removeTeamPlayerRows(Long roundId, Long playerId) {
+        if (roundId == null || playerId == null) {
+            return;
+        }
+        List<RoundTeamPlayer> existingRows = roundTeamPlayerRepository.findForRoundOrderedByTeamNumberAndPlayerOrder(roundId);
+        for (RoundTeamPlayer row : existingRows) {
+            if (row != null && row.getPlayer() != null && playerId.equals(row.getPlayer().getId())) {
+                roundTeamPlayerRepository.delete(row);
+            }
+        }
+    }
+
     private List<RoundScrambleSeedingRoundResponse> mapScrambleSeedingRounds(Round round) {
         List<RoundScrambleSeedingRoundResponse> result = new ArrayList<>();
         if (round == null || round.getTrip() == null || round.getTrip().getId() == null
-                || round.getFormat() == null || !"TEAM_SCRAMBLE".equals(round.getFormat().name())) {
+                || !roundEventCapabilityService.isScrambleRound(round)) {
             return result;
         }
 
@@ -252,7 +345,7 @@ public class RoundTeamAssignmentService {
         if (plannedRound.getId() == null) {
             return false;
         }
-        if (plannedRound.getFormat() != null && "TEAM_SCRAMBLE".equals(plannedRound.getFormat().name())) {
+        if (plannedRoundHasEventType(plannedRound, RoundEventType.TEAM_SCRAMBLE)) {
             return false;
         }
 
@@ -274,8 +367,26 @@ public class RoundTeamAssignmentService {
         return plannedRound.getRoundNumber() < scrambleRound.getRoundNumber();
     }
 
+    private boolean plannedRoundHasEventType(TripPlannedRound plannedRound, RoundEventType eventType) {
+        if (plannedRound == null || eventType == null) {
+            return false;
+        }
+        if (plannedRound.getId() != null) {
+            List<TripPlannedRoundEvent> events = tripPlannedRoundEventRepository.findByPlannedRound_IdOrderByEventOrderAsc(plannedRound.getId());
+            if (events != null && !events.isEmpty()) {
+                for (TripPlannedRoundEvent event : events) {
+                    if (event != null && event.getEventType() == eventType) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        return RoundEventType.fromLegacyRoundFormat(plannedRound.getFormat()) == eventType;
+    }
+
     private int resolveScrambleTeamSize(Round round) {
-        if (round == null || round.getFormat() == null || !"TEAM_SCRAMBLE".equals(round.getFormat().name())) {
+        if (!roundEventCapabilityService.isScrambleRound(round)) {
             return 4;
         }
         Integer size = round.getScrambleTeamSize();
@@ -283,7 +394,7 @@ public class RoundTeamAssignmentService {
     }
 
     private String resolveScrambleSeedingMethod(Round round) {
-        if (round == null || round.getFormat() == null || !"TEAM_SCRAMBLE".equals(round.getFormat().name())) {
+        if (!roundEventCapabilityService.isScrambleRound(round)) {
             return "CURRENT_HANDICAP_INDEX";
         }
         return normalizeScrambleSeedingMethod(round.getScrambleSeedingMethod());
@@ -315,52 +426,23 @@ public class RoundTeamAssignmentService {
 
 
     private LocalDate determineSeedingAsOfDate(Round round) {
+        return resolveScrambleHandicapDate(round);
+    }
+
+    private LocalDate resolveScrambleHandicapDate(Round round) {
         if (round == null) {
             return null;
         }
-
+        if (roundEventCapabilityService.isScrambleRound(round)
+                && round.getScrambleHandicapDate() != null) {
+            return round.getScrambleHandicapDate();
+        }
         LocalDate fallbackDate = round.getRoundDate();
-        if (fallbackDate == null) {
-            fallbackDate = LocalDate.now();
-        }
-
-        if (round.getFormat() == null || !"TEAM_SCRAMBLE".equals(round.getFormat().name())) {
-            return fallbackDate;
-        }
-
-        if (round.getTrip() == null || round.getTrip().getId() == null) {
-            return fallbackDate;
-        }
-
-        LocalDate latestIncludedDate = null;
-        Set<Long> selectedSeedRoundIds = loadSelectedScrambleSeedRoundIds(round);
-        if (selectedSeedRoundIds.isEmpty()) {
-            return fallbackDate;
-        }
-
-        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTrip_IdOrderByRoundNumberAsc(round.getTrip().getId());
-        for (TripPlannedRound plannedRound : plannedRounds) {
-            if (plannedRound.getId() == null || !selectedSeedRoundIds.contains(plannedRound.getId())) {
-                continue;
-            }
-            if (!isEligibleScrambleSeedingRound(plannedRound, round)) {
-                continue;
-            }
-
-            LocalDate plannedDate = plannedRound.getRoundDate();
-            if (plannedDate == null) {
-                continue;
-            }
-            if (latestIncludedDate == null || plannedDate.isAfter(latestIncludedDate)) {
-                latestIncludedDate = plannedDate;
-            }
-        }
-
-        return latestIncludedDate == null ? fallbackDate : latestIncludedDate.plusDays(1);
+        return fallbackDate == null ? LocalDate.now() : fallbackDate;
     }
 
     private String buildSeedingLabel(Round round, LocalDate seedingAsOfDate) {
-        if (round != null && round.getFormat() != null && "TEAM_SCRAMBLE".equals(round.getFormat().name())) {
+        if (roundEventCapabilityService.isScrambleRound(round)) {
             String method = resolveScrambleSeedingMethod(round);
             if ("AVERAGE_GROSS_SCORE".equals(method)) {
                 return "Scramble teams seeded by average gross score from selected rounds.";
@@ -369,8 +451,8 @@ public class RoundTeamAssignmentService {
                 return "Scramble teams seeded by average net score from selected rounds.";
             }
             return seedingAsOfDate == null
-                    ? "Scramble teams seeded by current handicap index."
-                    : "Scramble teams seeded by current handicap index as of " + seedingAsOfDate + ".";
+                    ? "Scramble teams seeded by projected handicap index."
+                    : "Scramble teams seeded by projected handicap index as of " + seedingAsOfDate + ".";
         }
         return seedingAsOfDate == null
                 ? "Team assignment index snapshot."
@@ -409,9 +491,9 @@ public class RoundTeamAssignmentService {
                 response.setDisplayNameForMen(display);
                 response.setDisplayNameForWomen(display);
             } else {
-                BigDecimal menRating = sourceTee.getRatingForGender("M");
-                Integer menSlope = sourceTee.getSlopeForGender("M");
-                Integer menPar = sourceTee.getParForGender("M");
+                BigDecimal menRating = tee.getCourseRating();
+                Integer menSlope = tee.getSlope();
+                Integer menPar = tee.getParTotal();
 
                 BigDecimal womenRating = sourceTee.getRatingForGender("F");
                 Integer womenSlope = sourceTee.getSlopeForGender("F");
@@ -493,7 +575,7 @@ public class RoundTeamAssignmentService {
             boolean hasPrior = false;
 
             if (courseRating != null) {
-                sb.append("CR ").append(courseRating);
+                sb.append("CR ").append(formatCourseRating(courseRating));
                 hasPrior = true;
             }
 
@@ -518,6 +600,13 @@ public class RoundTeamAssignmentService {
         return sb.toString();
     }
 
+    private String formatCourseRating(BigDecimal value) {
+        if (value == null) {
+            return "—";
+        }
+        return value.setScale(1, RoundingMode.HALF_UP).toPlainString();
+    }
+
     private RoundTeamPlayerResponse mapAssignedPlayer(RoundTeamPlayer roundTeamPlayer, Long roundId, Round round, LocalDate seedingAsOfDate) {
         Player player = roundTeamPlayer.getPlayer();
 
@@ -530,6 +619,7 @@ public class RoundTeamAssignmentService {
         scorecardOpt.ifPresent(scorecard -> {
             response.setScorecardId(scorecard.getId());
             applyScorecardTee(response, scorecard, round);
+            applyParticipationStatus(response, scorecard);
         });
 
         applyGender(response, player);
@@ -547,10 +637,28 @@ public class RoundTeamAssignmentService {
         response.setPlayerOrder(null);
 
         applyScorecardTee(response, scorecard, round);
+        applyParticipationStatus(response, scorecard);
         applyGender(response, player);
         applyTripIndex(response, player, round, seedingAsOfDate);
 
         return response;
+    }
+
+    private RoundTeamPlayerResponse mapUnavailablePlayer(Scorecard scorecard, Round round, LocalDate seedingAsOfDate) {
+        RoundTeamPlayerResponse response = mapUnassignedPlayer(scorecard, round, seedingAsOfDate);
+        applyParticipationStatus(response, scorecard);
+        return response;
+    }
+
+    private boolean isActiveScorecard(Scorecard scorecard) {
+        return scorecard == null || scorecard.getParticipationStatus() == null
+                || scorecard.getParticipationStatus() == ScorecardParticipationStatus.ACTIVE;
+    }
+
+    private void applyParticipationStatus(RoundTeamPlayerResponse response, Scorecard scorecard) {
+        ScorecardParticipationStatus status = scorecard == null ? null : scorecard.getParticipationStatus();
+        response.setParticipationStatus(status == null ? ScorecardParticipationStatus.ACTIVE.name() : status.name());
+        response.setWithdrawalHoleNumber(scorecard == null ? null : scorecard.getWithdrawalHoleNumber());
     }
 
     private void applyTripIndex(RoundTeamPlayerResponse response, Player player, Round round, LocalDate seedingAsOfDate) {
@@ -558,7 +666,7 @@ public class RoundTeamAssignmentService {
             return;
         }
 
-        if (round.getFormat() != null && "TEAM_SCRAMBLE".equals(round.getFormat().name())) {
+        if (roundEventCapabilityService.isScrambleRound(round)) {
             String method = resolveScrambleSeedingMethod(round);
             if ("AVERAGE_GROSS_SCORE".equals(method) || "AVERAGE_NET_SCORE".equals(method)) {
                 response.setTripIndex(calculateSelectedRoundAverage(player.getId(), round, method));
@@ -575,11 +683,30 @@ public class RoundTeamAssignmentService {
             return;
         }
 
+        BigDecimal frozenIndex = resolveFrozenTripPlayerIndex(player, round);
+        if (frozenIndex != null) {
+            response.setTripIndex(frozenIndex);
+            return;
+        }
+
         try {
-            response.setTripIndex(tripHandicapService.calculateTripIndexAsOf(player, handicapGroupCode, seedingAsOfDate));
+            response.setTripIndex(tripHandicapService.calculateTripIndexAsOf(player, handicapGroupCode, seedingAsOfDate, round.getTrip().getHandicapMethod()));
         } catch (RuntimeException ignored) {
             response.setTripIndex(null);
         }
+    }
+
+    private BigDecimal resolveFrozenTripPlayerIndex(Player player, Round round) {
+        if (player == null || player.getId() == null || round == null || round.getTrip() == null || round.getTrip().getId() == null) {
+            return null;
+        }
+
+        Optional<TripPlayer> tripPlayer = tripPlayerRepository.findByTrip_IdAndPlayer_Id(round.getTrip().getId(), player.getId());
+        if (tripPlayer.isEmpty()) {
+            return null;
+        }
+
+        return tripPlayer.get().getFrozenHandicapIndex();
     }
 
     private BigDecimal calculateSelectedRoundAverage(Long playerId, Round scrambleRound, String method) {

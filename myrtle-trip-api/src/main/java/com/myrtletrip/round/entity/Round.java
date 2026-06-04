@@ -54,6 +54,12 @@ public class Round {
     @Column(name = "scramble_seeding_method", length = 40)
     private String scrambleSeedingMethod = "CURRENT_HANDICAP_INDEX";
 
+    @Column(name = "scramble_score_entry_mode", length = 20)
+    private String scrambleScoreEntryMode = "TOTAL";
+
+    @Column(name = "scramble_handicap_date")
+    private LocalDate scrambleHandicapDate;
+
     public Long getId() { return id; }
 
     public Trip getTrip() { return trip; }
@@ -97,4 +103,10 @@ public class Round {
 
     public String getScrambleSeedingMethod() { return scrambleSeedingMethod; }
     public void setScrambleSeedingMethod(String scrambleSeedingMethod) { this.scrambleSeedingMethod = scrambleSeedingMethod; }
+
+    public String getScrambleScoreEntryMode() { return scrambleScoreEntryMode; }
+    public void setScrambleScoreEntryMode(String scrambleScoreEntryMode) { this.scrambleScoreEntryMode = scrambleScoreEntryMode; }
+
+    public LocalDate getScrambleHandicapDate() { return scrambleHandicapDate; }
+    public void setScrambleHandicapDate(LocalDate scrambleHandicapDate) { this.scrambleHandicapDate = scrambleHandicapDate; }
 }

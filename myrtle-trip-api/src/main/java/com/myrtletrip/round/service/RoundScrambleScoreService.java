@@ -7,7 +7,6 @@ import com.myrtletrip.round.dto.SaveRoundScrambleTeamScoreRequest;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTeamPlayer;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
@@ -30,19 +29,22 @@ public class RoundScrambleScoreService {
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final RoundRecalculationOrchestrationService roundRecalculationOrchestrationService;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundScrambleScoreService(RoundRepository roundRepository,
                                      RoundTeamRepository roundTeamRepository,
                                      TeamHoleScoreRepository teamHoleScoreRepository,
                                      RoundTeamPlayerRepository roundTeamPlayerRepository,
                                      RoundRecalculationOrchestrationService roundRecalculationOrchestrationService,
-                                     TripEditingGuardService tripEditingGuardService) {
+                                     TripEditingGuardService tripEditingGuardService,
+                                     RoundEventCapabilityService roundEventCapabilityService) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
         this.teamHoleScoreRepository = teamHoleScoreRepository;
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.roundRecalculationOrchestrationService = roundRecalculationOrchestrationService;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional(readOnly = true)
@@ -50,6 +52,7 @@ public class RoundScrambleScoreService {
         Round round = loadScrambleRound(roundId);
         RoundScrambleScoreResponse response = new RoundScrambleScoreResponse();
         response.setRoundId(round.getId());
+        response.setEntryMode(resolveScrambleScoreEntryMode(round));
 
         List<RoundTeam> teams = roundTeamRepository.findByRound_IdOrderByTeamNumberAsc(roundId);
         for (RoundTeam team : teams) {
@@ -90,7 +93,15 @@ public class RoundScrambleScoreService {
             teamById.put(team.getId(), team);
         }
 
-        boolean totalMode = "TOTAL".equalsIgnoreCase(request.getEntryMode());
+        String entryMode = normalizeEntryMode(request.getEntryMode());
+        boolean totalMode = "TOTAL".equals(entryMode);
+
+        if (Boolean.TRUE.equals(round.getFinalized()) && !entryMode.equals(resolveScrambleScoreEntryMode(round))) {
+            throw new IllegalStateException("Cannot change Scramble scoring mode after this round is finalized.");
+        }
+
+        round.setScrambleScoreEntryMode(entryMode);
+        roundRepository.save(round);
 
         for (SaveRoundScrambleTeamScoreRequest teamRequest : request.getTeams()) {
             if (teamRequest == null || teamRequest.getRoundTeamId() == null) {
@@ -137,11 +148,32 @@ public class RoundScrambleScoreService {
         }
     }
 
+    private String normalizeEntryMode(String entryMode) {
+        if (entryMode == null || entryMode.trim().isEmpty()) {
+            return "TOTAL";
+        }
+        String normalized = entryMode.trim().toUpperCase();
+        if ("HOLES".equals(normalized)) {
+            return "HOLES";
+        }
+        if ("TOTAL".equals(normalized)) {
+            return "TOTAL";
+        }
+        throw new IllegalArgumentException("Invalid Scramble scoring mode: " + entryMode);
+    }
+
+    private String resolveScrambleScoreEntryMode(Round round) {
+        if (round == null) {
+            return "TOTAL";
+        }
+        return normalizeEntryMode(round.getScrambleScoreEntryMode());
+    }
+
     private Round loadScrambleRound(Long roundId) {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
-        if (round.getFormat() != RoundFormat.TEAM_SCRAMBLE) {
-            throw new IllegalArgumentException("Round is not a TEAM_SCRAMBLE round: " + roundId);
+        if (!roundEventCapabilityService.isScrambleRound(round)) {
+            throw new IllegalArgumentException("Round does not include a scramble event: " + roundId);
         }
         return round;
     }

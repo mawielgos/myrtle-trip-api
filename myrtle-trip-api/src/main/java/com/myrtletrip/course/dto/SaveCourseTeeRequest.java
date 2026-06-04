@@ -3,14 +3,21 @@ package com.myrtletrip.course.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 public class SaveCourseTeeRequest {
 
     private String teeName;
     private String teeType;
     private LocalDate effectiveDate;
     private LocalDate retiredDate;
+    @JsonAlias({"menCourseRating", "mensCourseRating"})
     private BigDecimal courseRating;
+
+    @JsonAlias({"menSlope", "mensSlope"})
     private Integer slope;
+
+    @JsonAlias({"menParTotal", "mensParTotal"})
     private Integer parTotal;
     private Integer yardageTotal;
     private BigDecimal womenCourseRating;

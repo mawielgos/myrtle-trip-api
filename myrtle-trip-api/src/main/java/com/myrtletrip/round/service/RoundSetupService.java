@@ -110,6 +110,7 @@ public class RoundSetupService {
         round.setFinalized(false);
         round.setFormat(format);
         round.setScrambleTeamSize(4);
+        round.setScrambleScoreEntryMode("TOTAL");
         round.setHandicapPercent(handicapPercent);
         round = roundRepository.save(round);
 
@@ -130,6 +131,7 @@ public class RoundSetupService {
             scorecard.setRound(round);
             scorecard.setPlayer(player);
             scorecard.setRoundTee(defaultRoundTee);
+            scorecard.setParticipationStatus(tripPlayer.getParticipationStatus());
 
             roundHandicapService.populateCurrentHandicaps(scorecard, handicapGroupCode);
             scorecardRepository.save(scorecard);
@@ -185,9 +187,7 @@ public class RoundSetupService {
         roundTee.setTeeRole(role);
         roundTee.setCourseName(round.getCourse().getName());
         roundTee.setTeeName(sourceCourseTee.getTeeName());
-        roundTee.setCourseRating(sourceCourseTee.getCourseRating());
-        roundTee.setSlope(sourceCourseTee.getSlope());
-        roundTee.setParTotal(sourceCourseTee.getParTotal());
+        applySnapshotValues(roundTee, sourceCourseTee);
         roundTee = roundTeeRepository.save(roundTee);
 
         List<CourseHole> sourceHoles = courseHoleRepository.findByCourseTee_IdOrderByHoleNumberAsc(sourceCourseTee.getId());
@@ -206,6 +206,32 @@ public class RoundSetupService {
         }
 
         return roundTee;
+    }
+
+    private void applySnapshotValues(RoundTee roundTee, CourseTee sourceCourseTee) {
+        if (roundTee == null || sourceCourseTee == null) {
+            return;
+        }
+
+        // Prefer men's values when present. If this is a women-only tee, the men's
+        // rating/slope are intentionally blank, so freeze the women's values instead.
+        if (sourceCourseTee.getCourseRating() != null && sourceCourseTee.getSlope() != null && sourceCourseTee.getParTotal() != null) {
+            roundTee.setCourseRating(sourceCourseTee.getCourseRating());
+            roundTee.setSlope(sourceCourseTee.getSlope());
+            roundTee.setParTotal(sourceCourseTee.getParTotal());
+            return;
+        }
+
+        if (sourceCourseTee.getWomenCourseRating() != null && sourceCourseTee.getWomenSlope() != null && sourceCourseTee.getWomenParTotal() != null) {
+            roundTee.setCourseRating(sourceCourseTee.getWomenCourseRating());
+            roundTee.setSlope(sourceCourseTee.getWomenSlope());
+            roundTee.setParTotal(sourceCourseTee.getWomenParTotal());
+            return;
+        }
+
+        throw new IllegalStateException("Course tee " + sourceCourseTee.getId() + " ("
+                + sourceCourseTee.getTeeName()
+                + ") is missing rating/slope/par values for both men and women. Open Course Master and complete the tee rating before starting the round.");
     }
 
     private int normalizeHandicapPercent(Integer handicapPercent) {

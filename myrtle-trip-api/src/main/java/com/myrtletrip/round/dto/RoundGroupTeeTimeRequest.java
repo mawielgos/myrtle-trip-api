@@ -6,6 +6,7 @@ public class RoundGroupTeeTimeRequest {
 
     private Integer groupNumber;
     private LocalTime teeTime;
+    private Integer startingHole;
 
     public Integer getGroupNumber() {
         return groupNumber;
@@ -21,5 +22,13 @@ public class RoundGroupTeeTimeRequest {
 
     public void setTeeTime(LocalTime teeTime) {
         this.teeTime = teeTime;
+    }
+
+    public Integer getStartingHole() {
+        return startingHole;
+    }
+
+    public void setStartingHole(Integer startingHole) {
+        this.startingHole = startingHole;
     }
 }

@@ -14,6 +14,12 @@ public class RoundPlayerStatusResponse {
     private String roundTeeName;
     private Integer courseHandicap;
     private Integer playingHandicap;
+    private Long teamId;
+    private String teamName;
+    private Integer teamNumber;
+    private Integer playerOrder;
+    private String participationStatus;
+    private Integer withdrawalHoleNumber;
 
     public Long getScorecardId() { return scorecardId; }
     public void setScorecardId(Long scorecardId) { this.scorecardId = scorecardId; }
@@ -39,4 +45,16 @@ public class RoundPlayerStatusResponse {
     public void setCourseHandicap(Integer courseHandicap) { this.courseHandicap = courseHandicap; }
     public Integer getPlayingHandicap() { return playingHandicap; }
     public void setPlayingHandicap(Integer playingHandicap) { this.playingHandicap = playingHandicap; }
+    public Long getTeamId() { return teamId; }
+    public void setTeamId(Long teamId) { this.teamId = teamId; }
+    public String getTeamName() { return teamName; }
+    public void setTeamName(String teamName) { this.teamName = teamName; }
+    public Integer getTeamNumber() { return teamNumber; }
+    public void setTeamNumber(Integer teamNumber) { this.teamNumber = teamNumber; }
+    public Integer getPlayerOrder() { return playerOrder; }
+    public void setPlayerOrder(Integer playerOrder) { this.playerOrder = playerOrder; }
+    public String getParticipationStatus() { return participationStatus; }
+    public void setParticipationStatus(String participationStatus) { this.participationStatus = participationStatus; }
+    public Integer getWithdrawalHoleNumber() { return withdrawalHoleNumber; }
+    public void setWithdrawalHoleNumber(Integer withdrawalHoleNumber) { this.withdrawalHoleNumber = withdrawalHoleNumber; }
 }

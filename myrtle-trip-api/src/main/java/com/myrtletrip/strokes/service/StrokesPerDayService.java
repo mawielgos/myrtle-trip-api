@@ -7,12 +7,12 @@ import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.entity.RoundTeeHole;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeeHoleRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.round.service.RoundTeeProvisioningService;
 import com.myrtletrip.round.service.ScorecardHandicapService;
+import com.myrtletrip.round.service.RoundEventCapabilityService;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.strokes.dto.StrokesPerDayPlayerResponse;
@@ -50,6 +50,7 @@ public class StrokesPerDayService {
     private final CourseHandicapService courseHandicapService;
     private final ScorecardRepository scorecardRepository;
     private final ScorecardHandicapService scorecardHandicapService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public StrokesPerDayService(TripRepository tripRepository,
                                 TripPlayerRepository tripPlayerRepository,
@@ -60,7 +61,8 @@ public class StrokesPerDayService {
                                 TripHandicapService tripHandicapService,
                                 CourseHandicapService courseHandicapService,
                                 ScorecardRepository scorecardRepository,
-                                ScorecardHandicapService scorecardHandicapService) {
+                                ScorecardHandicapService scorecardHandicapService,
+                                RoundEventCapabilityService roundEventCapabilityService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.roundRepository = roundRepository;
@@ -71,6 +73,7 @@ public class StrokesPerDayService {
         this.courseHandicapService = courseHandicapService;
         this.scorecardRepository = scorecardRepository;
         this.scorecardHandicapService = scorecardHandicapService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -78,7 +81,7 @@ public class StrokesPerDayService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found"));
 
-        List<Round> rounds = nonScrambleRounds(roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId));
+        List<Round> rounds = playerScorecardRounds(roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId));
         for (Round round : rounds) {
             roundTeeProvisioningService.ensureRoundTeeOptions(round);
         }
@@ -98,7 +101,7 @@ public class StrokesPerDayService {
 
         List<StrokesPerDayPlayerResponse> playerResponses = new ArrayList<>();
         for (TripPlayer tripPlayer : tripPlayers) {
-            playerResponses.add(toPlayerResponse(tripPlayer, rounds, trip.getTripCode()));
+            playerResponses.add(toPlayerResponse(tripPlayer, trip, rounds));
         }
         response.setPlayers(playerResponses);
 
@@ -196,8 +199,8 @@ public class StrokesPerDayService {
     }
 
     private StrokesPerDayPlayerResponse toPlayerResponse(TripPlayer tripPlayer,
-                                                         List<Round> rounds,
-                                                         String handicapGroupCode) {
+                                                         Trip trip,
+                                                         List<Round> rounds) {
         Player player = tripPlayer.getPlayer();
 
         StrokesPerDayPlayerResponse dto = new StrokesPerDayPlayerResponse();
@@ -207,24 +210,22 @@ public class StrokesPerDayService {
 
         List<StrokesPerDayPlayerRoundResponse> roundResponses = new ArrayList<>();
         for (Round round : rounds) {
-            roundResponses.add(toPlayerRoundResponse(player, round, handicapGroupCode));
+            roundResponses.add(toPlayerRoundResponse(tripPlayer, trip, round));
         }
         dto.setRounds(roundResponses);
 
         return dto;
     }
 
-    private StrokesPerDayPlayerRoundResponse toPlayerRoundResponse(Player player,
-                                                                   Round round,
-                                                                   String handicapGroupCode) {
+    private StrokesPerDayPlayerRoundResponse toPlayerRoundResponse(TripPlayer tripPlayer,
+                                                                   Trip trip,
+                                                                   Round round) {
+        Player player = tripPlayer == null ? null : tripPlayer.getPlayer();
         StrokesPerDayPlayerRoundResponse dto = new StrokesPerDayPlayerRoundResponse();
         dto.setRoundId(round.getId());
         dto.setRoundNumber(round.getRoundNumber());
 
-        BigDecimal tripIndex = null;
-        if (player != null && handicapGroupCode != null && !handicapGroupCode.isBlank() && round.getRoundDate() != null) {
-            tripIndex = tripHandicapService.calculateTripIndexAsOf(player, handicapGroupCode, round.getRoundDate());
-        }
+        BigDecimal tripIndex = calculateTripIndexForDailyHandicaps(tripPlayer, trip, round);
         dto.setTripIndex(tripIndex);
 
         RoundTee defaultTee = round.getDefaultRoundTee();
@@ -407,6 +408,13 @@ public class StrokesPerDayService {
         return courseHandicap.setScale(0, RoundingMode.HALF_UP).intValue();
     }
 
+    private String formatCourseRating(BigDecimal value) {
+        if (value == null) {
+            return "—";
+        }
+        return value.setScale(1, RoundingMode.HALF_UP).toPlainString();
+    }
+
     private String buildTeeOptionDisplayName(String teeName,
                                              BigDecimal courseRating,
                                              Integer slope,
@@ -417,7 +425,7 @@ public class StrokesPerDayService {
 
         List<String> parts = new ArrayList<>();
         if (courseRating != null || slope != null) {
-            parts.add((courseRating == null ? "—" : courseRating.toPlainString())
+            parts.add((courseRating == null ? "—" : formatCourseRating(courseRating))
                     + " / "
                     + (slope == null ? "—" : slope.toString()));
         }
@@ -508,11 +516,46 @@ public class StrokesPerDayService {
         return (int) Math.round(courseHandicap * (percent / 100.0));
     }
 
-    private List<Round> nonScrambleRounds(List<Round> rounds) {
+    private BigDecimal calculateTripIndexForDailyHandicaps(TripPlayer tripPlayer, Trip trip, Round round) {
+        if (trip == null || round == null || round.getRoundDate() == null || tripPlayer == null) {
+            return null;
+        }
+
+        if (trip.getHandicapsEnabled() != null && !Boolean.TRUE.equals(trip.getHandicapsEnabled())) {
+            return BigDecimal.ZERO;
+        }
+
+        if (tripPlayer.getFrozenHandicapIndex() != null) {
+            return tripPlayer.getFrozenHandicapIndex();
+        }
+
+        Player player = tripPlayer.getPlayer();
+        if (player == null || trip.getTripCode() == null || trip.getTripCode().isBlank()) {
+            return null;
+        }
+
+        try {
+            return tripHandicapService.calculateTripIndexAsOf(
+                    player,
+                    trip.getTripCode(),
+                    round.getRoundDate(),
+                    trip.getHandicapMethod()
+            );
+        } catch (IllegalStateException ex) {
+            return null;
+        }
+    }
+
+    private List<Round> playerScorecardRounds(List<Round> rounds) {
         List<Round> filtered = new ArrayList<>();
 
+        if (rounds == null) {
+            return filtered;
+        }
+
         for (Round round : rounds) {
-            if (round.getFormat() != RoundFormat.TEAM_SCRAMBLE) {
+            RoundEventCapabilityService.RoundEventCapabilities capabilities = roundEventCapabilityService.getCapabilities(round);
+            if (capabilities.requiresPlayerScorecards()) {
                 filtered.add(round);
             }
         }

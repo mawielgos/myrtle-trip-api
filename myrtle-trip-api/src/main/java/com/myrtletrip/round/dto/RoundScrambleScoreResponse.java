@@ -6,6 +6,7 @@ import java.util.List;
 public class RoundScrambleScoreResponse {
 
     private Long roundId;
+    private String entryMode;
     private List<RoundScrambleTeamScoreResponse> teams = new ArrayList<>();
 
     public Long getRoundId() {
@@ -14,6 +15,14 @@ public class RoundScrambleScoreResponse {
 
     public void setRoundId(Long roundId) {
         this.roundId = roundId;
+    }
+
+    public String getEntryMode() {
+        return entryMode;
+    }
+
+    public void setEntryMode(String entryMode) {
+        this.entryMode = entryMode;
     }
 
     public List<RoundScrambleTeamScoreResponse> getTeams() {

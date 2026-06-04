@@ -5,7 +5,6 @@ import com.myrtletrip.round.entity.RoundGroup;
 import com.myrtletrip.round.entity.RoundGroupPlayer;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTeamPlayer;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundGroupRepository;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
@@ -31,6 +30,7 @@ public class RoundTeamAutoAssignmentService {
     private final RoundTeamPlayerRepository roundTeamPlayerRepository;
     private final ScorecardRepository scorecardRepository;
     private final TeamHoleScoreRepository teamHoleScoreRepository;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public RoundTeamAutoAssignmentService(
             RoundRepository roundRepository,
@@ -38,7 +38,8 @@ public class RoundTeamAutoAssignmentService {
             RoundTeamRepository roundTeamRepository,
             RoundTeamPlayerRepository roundTeamPlayerRepository,
             ScorecardRepository scorecardRepository,
-            TeamHoleScoreRepository teamHoleScoreRepository
+            TeamHoleScoreRepository teamHoleScoreRepository,
+            RoundEventCapabilityService roundEventCapabilityService
     ) {
         this.roundRepository = roundRepository;
         this.roundGroupRepository = roundGroupRepository;
@@ -46,6 +47,7 @@ public class RoundTeamAutoAssignmentService {
         this.roundTeamPlayerRepository = roundTeamPlayerRepository;
         this.scorecardRepository = scorecardRepository;
         this.teamHoleScoreRepository = teamHoleScoreRepository;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -62,18 +64,15 @@ public class RoundTeamAutoAssignmentService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found: " + roundId));
 
-        RoundFormat format = round.getFormat();
-        if (format == null) {
-            return;
-        }
+        RoundEventCapabilityService.RoundEventCapabilities capabilities = roundEventCapabilityService.getCapabilities(round);
 
         // Auto-build teams from tee-sheet groups for team formats where a group is also the competition team.
-        if (!format.requiresTeams()) {
+        if (!capabilities.requiresTeams()) {
             return;
         }
 
-        int expectedTeamSize = round.getFormat().expectedTeamSize();
-        if (format != RoundFormat.TEAM_SCRAMBLE && expectedTeamSize != 4) {
+        int expectedTeamSize = roundEventCapabilityService.expectedTeamSize(round);
+        if (!capabilities.hasScrambleEvent() && expectedTeamSize != 4) {
             return;
         }
 

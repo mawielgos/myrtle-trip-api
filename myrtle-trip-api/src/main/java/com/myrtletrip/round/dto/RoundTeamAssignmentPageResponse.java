@@ -1,5 +1,7 @@
 package com.myrtletrip.round.dto;
 
+import com.myrtletrip.permissions.dto.RoundCapabilityResponse;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,12 +11,15 @@ public class RoundTeamAssignmentPageResponse {
     private Long defaultRoundTeeId;
     private Integer scrambleTeamSize;
     private String scrambleSeedingMethod;
+    private java.time.LocalDate scrambleHandicapDate;
     private java.time.LocalDate seedingAsOfDate;
     private String seedingLabel;
     private List<RoundScrambleSeedingRoundResponse> scrambleSeedingRounds = new ArrayList<>();
     private List<RoundTeeOptionResponse> teeOptions = new ArrayList<>();
     private List<RoundTeamResponse> teams = new ArrayList<>();
     private List<RoundTeamPlayerResponse> unassignedPlayers = new ArrayList<>();
+    private List<RoundTeamPlayerResponse> inactivePlayers = new ArrayList<>();
+    private RoundCapabilityResponse capabilities;
 
     public Long getRoundId() { return roundId; }
     public void setRoundId(Long roundId) { this.roundId = roundId; }
@@ -27,6 +32,9 @@ public class RoundTeamAssignmentPageResponse {
 
     public String getScrambleSeedingMethod() { return scrambleSeedingMethod; }
     public void setScrambleSeedingMethod(String scrambleSeedingMethod) { this.scrambleSeedingMethod = scrambleSeedingMethod; }
+
+    public java.time.LocalDate getScrambleHandicapDate() { return scrambleHandicapDate; }
+    public void setScrambleHandicapDate(java.time.LocalDate scrambleHandicapDate) { this.scrambleHandicapDate = scrambleHandicapDate; }
 
     public java.time.LocalDate getSeedingAsOfDate() { return seedingAsOfDate; }
     public void setSeedingAsOfDate(java.time.LocalDate seedingAsOfDate) { this.seedingAsOfDate = seedingAsOfDate; }
@@ -45,4 +53,10 @@ public class RoundTeamAssignmentPageResponse {
 
     public List<RoundTeamPlayerResponse> getUnassignedPlayers() { return unassignedPlayers; }
     public void setUnassignedPlayers(List<RoundTeamPlayerResponse> unassignedPlayers) { this.unassignedPlayers = unassignedPlayers; }
+
+    public List<RoundTeamPlayerResponse> getInactivePlayers() { return inactivePlayers; }
+    public void setInactivePlayers(List<RoundTeamPlayerResponse> inactivePlayers) { this.inactivePlayers = inactivePlayers; }
+
+    public RoundCapabilityResponse getCapabilities() { return capabilities; }
+    public void setCapabilities(RoundCapabilityResponse capabilities) { this.capabilities = capabilities; }
 }

@@ -12,6 +12,7 @@ import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +66,13 @@ public class RoundCorrectionService {
                 ? snapshotAllRoundScorecards(roundId)
                 : new ArrayList<ScorecardSnapshot>();
         List<ScorecardSnapshot> scoreSnapshots = snapshotPlayerCorrections(roundId, request.getPlayerCorrections());
+        List<ScorecardSnapshot> participationSnapshots = snapshotParticipationCorrections(roundId, request.getParticipationCorrections());
+
+        if (request.getParticipationCorrections() != null && !request.getParticipationCorrections().isEmpty()) {
+            applyParticipationCorrections(roundId, request.getParticipationCorrections());
+            changedWithoutBulkScoreSave = true;
+            logParticipationChanges(round, participationSnapshots);
+        }
 
         if (request.getTeeCorrections() != null && !request.getTeeCorrections().isEmpty()) {
             scorecardHandicapService.applyTeeCorrections(roundId, request.getTeeCorrections());
@@ -95,8 +103,9 @@ public class RoundCorrectionService {
 
             bulkRequest.setScorecards(scorecards);
 
-            // This path saves hole scores and then runs the full correction cascade once.
-            bulkScoreEntryService.saveBulkScores(roundId, bulkRequest);
+            // This path saves hole scores on finalized rounds and then runs the full correction cascade once.
+            // Do not use the normal bulk score save gate here; finalized rounds are expected in correction mode.
+            bulkScoreEntryService.saveBulkScoreCorrections(roundId, bulkRequest);
             logScoreChanges(round, scoreSnapshots);
         } else if (changedWithoutBulkScoreSave) {
             // Tee/handicap-only corrections still affect net scores, game results, history, standings, and payouts.
@@ -126,11 +135,78 @@ public class RoundCorrectionService {
 
         boolean hasPlayerCorrections = request.getPlayerCorrections() != null && !request.getPlayerCorrections().isEmpty();
         boolean hasTeeCorrections = request.getTeeCorrections() != null && !request.getTeeCorrections().isEmpty();
+        boolean hasParticipationCorrections = request.getParticipationCorrections() != null && !request.getParticipationCorrections().isEmpty();
         boolean refreshHandicaps = Boolean.TRUE.equals(request.getRefreshHandicaps());
 
-        if (!hasPlayerCorrections && !hasTeeCorrections && !refreshHandicaps) {
-            throw new IllegalArgumentException("At least one score, tee, or handicap correction is required");
+        if (!hasPlayerCorrections && !hasTeeCorrections && !hasParticipationCorrections && !refreshHandicaps) {
+            throw new IllegalArgumentException("At least one score, tee, participation, or handicap correction is required");
         }
+    }
+
+    private void applyParticipationCorrections(Long roundId, List<RoundCorrectionRequest.ParticipationCorrectionDto> corrections) {
+        if (corrections == null) {
+            return;
+        }
+        for (RoundCorrectionRequest.ParticipationCorrectionDto correction : corrections) {
+            if (correction == null || correction.getScorecardId() == null) {
+                continue;
+            }
+            Scorecard scorecard = scorecardRepository.findById(correction.getScorecardId())
+                    .orElseThrow(() -> new IllegalArgumentException("Scorecard not found: " + correction.getScorecardId()));
+            if (scorecard.getRound() == null || scorecard.getRound().getId() == null
+                    || !scorecard.getRound().getId().equals(roundId)) {
+                throw new IllegalArgumentException("Scorecard " + correction.getScorecardId() + " does not belong to round " + roundId);
+            }
+
+            ScorecardParticipationStatus status = parseParticipationStatus(correction.getParticipationStatus());
+            scorecard.setParticipationStatus(status);
+            if (status == ScorecardParticipationStatus.WITHDRAWN) {
+                scorecard.setWithdrawalHoleNumber(normalizeWithdrawalHoleNumber(correction.getWithdrawalHoleNumber()));
+            } else {
+                scorecard.setWithdrawalHoleNumber(null);
+            }
+            scorecardRepository.save(scorecard);
+        }
+    }
+
+    private ScorecardParticipationStatus parseParticipationStatus(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return ScorecardParticipationStatus.ACTIVE;
+        }
+        try {
+            return ScorecardParticipationStatus.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Unsupported participation status: " + value);
+        }
+    }
+
+    private Integer normalizeWithdrawalHoleNumber(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        if (value < 0 || value > 18) {
+            throw new IllegalArgumentException("Withdrawal hole must be between 0 and 18.");
+        }
+        return value;
+    }
+
+    private List<ScorecardSnapshot> snapshotParticipationCorrections(Long roundId, List<RoundCorrectionRequest.ParticipationCorrectionDto> corrections) {
+        List<ScorecardSnapshot> snapshots = new ArrayList<ScorecardSnapshot>();
+        if (corrections == null) {
+            return snapshots;
+        }
+        for (RoundCorrectionRequest.ParticipationCorrectionDto correction : corrections) {
+            if (correction == null || correction.getScorecardId() == null) {
+                continue;
+            }
+            Scorecard scorecard = scorecardRepository.findById(correction.getScorecardId()).orElse(null);
+            if (scorecard == null || scorecard.getRound() == null || scorecard.getRound().getId() == null
+                    || !scorecard.getRound().getId().equals(roundId)) {
+                continue;
+            }
+            snapshots.add(buildSnapshot(scorecard));
+        }
+        return snapshots;
     }
 
     private List<ScorecardSnapshot> snapshotTeeCorrections(Long roundId, List<RoundTeeCorrectionRequest> corrections) {
@@ -201,6 +277,8 @@ public class RoundCorrectionService {
         snapshot.playingHandicap = scorecard.getPlayingHandicap();
         snapshot.grossScore = scorecard.getGrossScore();
         snapshot.netScore = scorecard.getNetScore();
+        snapshot.participationStatus = scorecard.getParticipationStatus() == null ? null : scorecard.getParticipationStatus().name();
+        snapshot.withdrawalHoleNumber = scorecard.getWithdrawalHoleNumber();
         snapshot.holes = getHoleScoreText(scorecard.getId());
         return snapshot;
     }
@@ -264,6 +342,30 @@ public class RoundCorrectionService {
         }
     }
 
+    private void logParticipationChanges(Round round, List<ScorecardSnapshot> snapshots) {
+        for (ScorecardSnapshot before : snapshots) {
+            Scorecard afterScorecard = scorecardRepository.findById(before.scorecardId).orElse(null);
+            if (afterScorecard == null) {
+                continue;
+            }
+            String beforeText = "participationStatus=" + before.participationStatus
+                    + ", withdrawalHoleNumber=" + before.withdrawalHoleNumber
+                    + ", grossScore=" + before.grossScore
+                    + ", netScore=" + before.netScore;
+            String afterText = "participationStatus=" + afterScorecard.getParticipationStatus()
+                    + ", withdrawalHoleNumber=" + afterScorecard.getWithdrawalHoleNumber()
+                    + ", grossScore=" + afterScorecard.getGrossScore()
+                    + ", netScore=" + afterScorecard.getNetScore();
+            roundCorrectionLogService.logCorrectionSafely(
+                    round,
+                    afterScorecard.getPlayer(),
+                    RoundCorrectionType.PARTICIPATION_CHANGE,
+                    beforeText,
+                    afterText
+            );
+        }
+    }
+
     private void logScoreChanges(Round round, List<ScorecardSnapshot> snapshots) {
         for (ScorecardSnapshot before : snapshots) {
             Scorecard afterScorecard = scorecardRepository.findById(before.scorecardId).orElse(null);
@@ -295,6 +397,8 @@ public class RoundCorrectionService {
         private Integer playingHandicap;
         private Integer grossScore;
         private Integer netScore;
+        private String participationStatus;
+        private Integer withdrawalHoleNumber;
         private String holes;
     }
 }

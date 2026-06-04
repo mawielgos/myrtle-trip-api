@@ -1,5 +1,6 @@
 package com.myrtletrip.round.service;
 
+import com.myrtletrip.permissions.service.RoundCapabilityService;
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.player.repository.PlayerRepository;
 import com.myrtletrip.round.dto.RoundTeamPlayerRequest;
@@ -11,19 +12,25 @@ import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTeamPlayer;
 import com.myrtletrip.round.entity.RoundTee;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.round.exceptionmodel.entity.RoundTeamException;
+import com.myrtletrip.round.exceptionmodel.repository.RoundTeamExceptionRepository;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.trip.service.TripEditingGuardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -39,6 +46,9 @@ public class RoundTeamService {
     private final RoundGroupAutoAssignmentService roundGroupAutoAssignmentService;
     private final RoundTeeResolver roundTeeResolver;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundCapabilityService roundCapabilityService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
+    private final RoundTeamExceptionRepository roundTeamExceptionRepository;
 
     public RoundTeamService(
             RoundRepository roundRepository,
@@ -50,7 +60,10 @@ public class RoundTeamService {
             ScorecardHandicapService scorecardHandicapService,
             RoundGroupAutoAssignmentService roundGroupAutoAssignmentService,
             RoundTeeResolver roundTeeResolver,
-            TripEditingGuardService tripEditingGuardService
+            TripEditingGuardService tripEditingGuardService,
+            RoundCapabilityService roundCapabilityService,
+            RoundEventCapabilityService roundEventCapabilityService,
+            RoundTeamExceptionRepository roundTeamExceptionRepository
     ) {
         this.roundRepository = roundRepository;
         this.roundTeamRepository = roundTeamRepository;
@@ -62,6 +75,9 @@ public class RoundTeamService {
         this.roundGroupAutoAssignmentService = roundGroupAutoAssignmentService;
         this.roundTeeResolver = roundTeeResolver;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundCapabilityService = roundCapabilityService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
+        this.roundTeamExceptionRepository = roundTeamExceptionRepository;
     }
 
     @Transactional
@@ -69,20 +85,16 @@ public class RoundTeamService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found"));
 
-        tripEditingGuardService.assertStructureEditable(round.getTrip());
+        roundCapabilityService.assertCanAssignTeams(round);
 
-        if (Boolean.TRUE.equals(round.getFinalized())) {
-            throw new IllegalStateException("Round is already finalized");
-        }
-
-        RoundFormat format = round.getFormat();
-        if (format == null) throw new IllegalStateException("Round format is not set");
-        if (!format.requiresTeams()) throw new IllegalStateException("This round format does not use teams");
+        if (!roundEventCapabilityService.requiresTeams(round)) throw new IllegalStateException("This round does not use teams");
         if (request == null || request.getTeams() == null || request.getTeams().isEmpty()) {
             throw new IllegalArgumentException("At least one team is required");
         }
 
-        validateRequest(request, format, round);
+        validateRequest(request, round);
+
+        List<PreservedTeamException> preservedExceptions = capturePreservableTeamExceptions(roundId);
 
         List<Scorecard> existingScorecards = scorecardRepository.findByRound_Id(roundId);
         for (Scorecard scorecard : existingScorecards) {
@@ -90,8 +102,16 @@ public class RoundTeamService {
         }
         scorecardRepository.saveAll(existingScorecards);
 
+        // Team assignments are rebuilt on every save. Short-team exceptions point at
+        // round_team rows, so remove them before deleting/recreating teams to avoid
+        // foreign-key violations. Valid exceptions are recreated below when the same
+        // team number still contains the same players after the save.
+        roundTeamExceptionRepository.deleteByRoundIdHard(roundId);
         roundTeamPlayerRepository.deleteByRoundTeam_Round_Id(roundId);
         roundTeamRepository.deleteByRound_Id(roundId);
+
+        Map<Integer, RoundTeam> savedTeamsByNumber = new HashMap<>();
+        Map<Integer, List<Long>> savedPlayerIdsByTeamNumber = new HashMap<>();
 
         for (RoundTeamRequest teamRequest : request.getTeams()) {
             RoundTeam roundTeam = new RoundTeam();
@@ -99,6 +119,9 @@ public class RoundTeamService {
             roundTeam.setTeamNumber(teamRequest.getTeamNumber());
             roundTeam.setTeamName(teamRequest.getTeamName());
             roundTeam = roundTeamRepository.save(roundTeam);
+            savedTeamsByNumber.put(roundTeam.getTeamNumber(), roundTeam);
+            List<Long> savedPlayerIds = new ArrayList<>();
+            savedPlayerIdsByTeamNumber.put(roundTeam.getTeamNumber(), savedPlayerIds);
 
             for (RoundTeamPlayerRequest playerRequest : teamRequest.getPlayers()) {
                 Player player = playerRepository.findById(playerRequest.getPlayerId())
@@ -109,6 +132,7 @@ public class RoundTeamService {
                 roundTeamPlayer.setPlayer(player);
                 roundTeamPlayer.setPlayerOrder(playerRequest.getPlayerOrder());
                 roundTeamPlayerRepository.save(roundTeamPlayer);
+                savedPlayerIds.add(player.getId());
 
                 Scorecard scorecard = scorecardRepository.findById(playerRequest.getScorecardId())
                         .orElseThrow(() -> new IllegalStateException("Scorecard not found: " + playerRequest.getScorecardId()));
@@ -118,6 +142,9 @@ public class RoundTeamService {
                 }
                 if (!scorecard.getPlayer().getId().equals(player.getId())) {
                     throw new IllegalStateException("Scorecard " + playerRequest.getScorecardId() + " does not belong to player " + player.getId());
+                }
+                if (scorecard.getParticipationStatus() != null && scorecard.getParticipationStatus() != ScorecardParticipationStatus.ACTIVE) {
+                    throw new IllegalStateException("Player " + player.getDisplayName() + " is marked " + scorecard.getParticipationStatus() + " for this round and cannot be assigned to a team.");
                 }
 
                 scorecard.setTeam(roundTeam);
@@ -139,11 +166,94 @@ public class RoundTeamService {
             }
         }
 
-        if (format == RoundFormat.TWO_MAN_LOW_NET || format == RoundFormat.TEAM_SCRAMBLE) {
+        restorePreservedTeamExceptions(round, preservedExceptions, savedTeamsByNumber, savedPlayerIdsByTeamNumber);
+
+        if (roundEventCapabilityService.requiresTeams(round)) {
             roundGroupAutoAssignmentService.syncGroupsFromTeamsIfNeeded(roundId);
         }
 
         return getTeams(roundId);
+    }
+
+
+    private List<PreservedTeamException> capturePreservableTeamExceptions(Long roundId) {
+        List<RoundTeamException> activeExceptions = roundTeamExceptionRepository.findByRound_IdAndActiveTrueOrderByRoundTeam_TeamNumberAscIdAsc(roundId);
+        List<PreservedTeamException> snapshots = new ArrayList<>();
+
+        for (RoundTeamException exception : activeExceptions) {
+            if (exception.getRoundTeam() == null || exception.getRoundTeam().getTeamNumber() == null) continue;
+
+            List<Long> playerIds = roundTeamPlayerRepository
+                    .findByRoundTeam_IdOrderByPlayerOrderAsc(exception.getRoundTeam().getId())
+                    .stream()
+                    .map(tp -> tp.getPlayer() == null ? null : tp.getPlayer().getId())
+                    .filter(Objects::nonNull)
+                    .sorted()
+                    .toList();
+
+            Integer ghostSourceTeamNumber = null;
+            if (exception.getGhostSourceTeam() != null) {
+                ghostSourceTeamNumber = exception.getGhostSourceTeam().getTeamNumber();
+            }
+
+            snapshots.add(new PreservedTeamException(
+                    exception.getRoundTeam().getTeamNumber(),
+                    playerIds,
+                    exception.getExceptionType(),
+                    exception.getGhostPlayer() == null ? null : exception.getGhostPlayer().getId(),
+                    ghostSourceTeamNumber,
+                    exception.getIndexMin(),
+                    exception.getIndexMax(),
+                    exception.getSelectionMethod(),
+                    exception.getRotationPattern(),
+                    exception.getNotes()
+            ));
+        }
+
+        return snapshots;
+    }
+
+    private void restorePreservedTeamExceptions(
+            Round round,
+            List<PreservedTeamException> preservedExceptions,
+            Map<Integer, RoundTeam> savedTeamsByNumber,
+            Map<Integer, List<Long>> savedPlayerIdsByTeamNumber
+    ) {
+        if (preservedExceptions == null || preservedExceptions.isEmpty()) return;
+
+        List<RoundTeamException> toSave = new ArrayList<>();
+        for (PreservedTeamException snapshot : preservedExceptions) {
+            RoundTeam savedTeam = savedTeamsByNumber.get(snapshot.teamNumber());
+            if (savedTeam == null) continue;
+
+            List<Long> savedPlayerIds = new ArrayList<>(savedPlayerIdsByTeamNumber.getOrDefault(snapshot.teamNumber(), List.of()));
+            savedPlayerIds.sort(Long::compareTo);
+            if (!savedPlayerIds.equals(snapshot.sortedPlayerIds())) continue;
+
+            RoundTeamException restored = new RoundTeamException();
+            restored.setRound(round);
+            restored.setRoundTeam(savedTeam);
+            restored.setExceptionType(snapshot.exceptionType());
+            restored.setActive(true);
+            restored.setIndexMin(snapshot.indexMin());
+            restored.setIndexMax(snapshot.indexMax());
+            restored.setSelectionMethod(snapshot.selectionMethod());
+            restored.setRotationPattern(snapshot.rotationPattern());
+            restored.setNotes(snapshot.notes());
+
+            if (snapshot.ghostPlayerId() != null) {
+                playerRepository.findById(snapshot.ghostPlayerId()).ifPresent(restored::setGhostPlayer);
+            }
+            if (snapshot.ghostSourceTeamNumber() != null) {
+                restored.setGhostSourceTeam(savedTeamsByNumber.get(snapshot.ghostSourceTeamNumber()));
+            }
+
+            toSave.add(restored);
+        }
+
+        if (!toSave.isEmpty()) {
+            roundTeamExceptionRepository.saveAll(toSave);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -151,8 +261,7 @@ public class RoundTeamService {
         Round round = roundRepository.findById(roundId)
                 .orElseThrow(() -> new IllegalArgumentException("Round not found"));
 
-        if (round.getFormat() == null) throw new IllegalStateException("Round format is not set");
-        if (!round.getFormat().requiresTeams()) return List.of();
+        if (!roundEventCapabilityService.requiresTeams(round)) return List.of();
 
         List<RoundTeam> teams = roundTeamRepository.findByRound_IdOrderByTeamNumberAsc(roundId);
 
@@ -184,7 +293,20 @@ public class RoundTeamService {
         }).toList();
     }
 
-    private void validateRequest(SaveRoundTeamsRequest request, RoundFormat format, Round round) {
+    private record PreservedTeamException(
+            Integer teamNumber,
+            List<Long> sortedPlayerIds,
+            com.myrtletrip.round.exceptionmodel.entity.RoundTeamExceptionType exceptionType,
+            Long ghostPlayerId,
+            Integer ghostSourceTeamNumber,
+            java.math.BigDecimal indexMin,
+            java.math.BigDecimal indexMax,
+            com.myrtletrip.round.exceptionmodel.entity.RoundTeamExceptionSelectionMethod selectionMethod,
+            String rotationPattern,
+            String notes
+    ) {}
+
+    private void validateRequest(SaveRoundTeamsRequest request, Round round) {
         Set<Integer> teamNumbers = new HashSet<>();
         Set<Long> playerIds = new HashSet<>();
         int expectedTeamSize = resolveExpectedTeamSize(round);
@@ -194,7 +316,7 @@ public class RoundTeamService {
             if (!teamNumbers.add(team.getTeamNumber())) throw new IllegalArgumentException("Duplicate teamNumber: " + team.getTeamNumber());
             if (team.getPlayers() == null || team.getPlayers().isEmpty()) throw new IllegalArgumentException("Each team must have at least one player");
             if (team.getPlayers().size() > expectedTeamSize) {
-                throw new IllegalArgumentException("Format " + format + " allows at most " + expectedTeamSize
+                throw new IllegalArgumentException("This round's event setup allows at most " + expectedTeamSize
                         + " players per team. Team " + team.getTeamNumber() + " has " + team.getPlayers().size());
             }
 
@@ -219,11 +341,8 @@ public class RoundTeamService {
     }
 
     private int resolveExpectedTeamSize(Round round) {
-        if (round != null && round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
-            Integer size = round.getScrambleTeamSize();
-            return size == null || size < 1 ? 4 : size;
-        }
-        return round == null || round.getFormat() == null ? 4 : round.getFormat().expectedTeamSize();
+        int size = roundEventCapabilityService.expectedTeamSize(round);
+        return size < 1 ? 4 : size;
     }
 
     private void applyScorecardTee(RoundTeamPlayerResponse playerResponse, Scorecard scorecard, Round round) {

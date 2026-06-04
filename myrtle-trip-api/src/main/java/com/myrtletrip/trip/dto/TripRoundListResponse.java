@@ -1,6 +1,10 @@
 package com.myrtletrip.trip.dto;
 
+import com.myrtletrip.event.dto.RoundEventResponse;
+
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TripRoundListResponse {
 
@@ -14,6 +18,7 @@ public class TripRoundListResponse {
     private boolean needsGrouping;
     private boolean needsTeams;
     private boolean readyForScoring;
+    private List<RoundEventResponse> events = new ArrayList<RoundEventResponse>();
 
     public Long getRoundId() {
         return roundId;
@@ -93,5 +98,13 @@ public class TripRoundListResponse {
 
     public void setReadyForScoring(boolean readyForScoring) {
         this.readyForScoring = readyForScoring;
+    }
+
+    public List<RoundEventResponse> getEvents() {
+        return events;
+    }
+
+    public void setEvents(List<RoundEventResponse> events) {
+        this.events = events == null ? new ArrayList<RoundEventResponse>() : events;
     }
 }

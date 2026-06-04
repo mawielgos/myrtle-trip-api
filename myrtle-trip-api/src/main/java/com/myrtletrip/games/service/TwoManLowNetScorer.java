@@ -4,7 +4,7 @@ import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
 import com.myrtletrip.games.model.RoundScoringData;
 import com.myrtletrip.games.model.TeamScoringData;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.event.model.RoundEventType;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -13,8 +13,8 @@ import java.util.List;
 public class TwoManLowNetScorer extends AbstractTeamGameScorer {
 
     @Override
-    public RoundFormat supports() {
-        return RoundFormat.TWO_MAN_LOW_NET;
+    public RoundEventType supports() {
+        return RoundEventType.TEAM_TWO_MAN_LOW_NET;
     }
 
     @Override

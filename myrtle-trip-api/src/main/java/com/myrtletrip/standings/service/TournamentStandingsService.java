@@ -6,7 +6,7 @@ import com.myrtletrip.prize.entity.PrizeSchedulePayout;
 import com.myrtletrip.prize.repository.PrizeScheduleRepository;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
-import com.myrtletrip.round.model.RoundFormat;
+import com.myrtletrip.round.service.RoundEventCapabilityService;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
@@ -17,6 +17,7 @@ import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripPlannedRound;
 import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.tournament.service.TripTournamentService;
+import com.myrtletrip.tournament.model.TournamentCompetitionType;
 import com.myrtletrip.trip.repository.TripPlayerRepository;
 import com.myrtletrip.trip.repository.TripRepository;
 import org.springframework.stereotype.Service;
@@ -34,7 +35,9 @@ import java.util.Map;
 @Service
 public class TournamentStandingsService {
 
-    private static final String TOURNAMENT_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
+    private static final String TOURNAMENT_LOW_NET_GAME_KEY = "TOURNAMENT_LOW_NET";
+    private static final String TOURNAMENT_LOW_GROSS_GAME_KEY = "TOURNAMENT_LOW_GROSS";
+    private static final String LEGACY_TOURNAMENT_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
 
     private final TripRepository tripRepository;
     private final TripPlayerRepository tripPlayerRepository;
@@ -42,23 +45,32 @@ public class TournamentStandingsService {
     private final RoundRepository roundRepository;
     private final ScorecardRepository scorecardRepository;
     private final PrizeScheduleRepository prizeScheduleRepository;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public TournamentStandingsService(TripRepository tripRepository,
                                    TripPlayerRepository tripPlayerRepository,
                                    TripTournamentService tripTournamentService,
                                    RoundRepository roundRepository,
                                    ScorecardRepository scorecardRepository,
-                                   PrizeScheduleRepository prizeScheduleRepository) {
+                                   PrizeScheduleRepository prizeScheduleRepository,
+                                   RoundEventCapabilityService roundEventCapabilityService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.tripTournamentService = tripTournamentService;
         this.roundRepository = roundRepository;
         this.scorecardRepository = scorecardRepository;
         this.prizeScheduleRepository = prizeScheduleRepository;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional(readOnly = true)
     public TournamentStandingsResponse getTournamentStandings(Long tripId) {
+        return getTournamentStandings(tripId, TournamentCompetitionType.LOW_NET.name());
+    }
+
+    @Transactional(readOnly = true)
+    public TournamentStandingsResponse getTournamentStandings(Long tripId, String competition) {
+        TournamentCompetitionType competitionType = TournamentCompetitionType.parse(competition);
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
 
@@ -69,8 +81,10 @@ public class TournamentStandingsService {
         TournamentStandingsResponse response = new TournamentStandingsResponse();
         response.setTripId(trip.getId());
         response.setTripName(trip.getName());
-        response.setTournamentName(tripTournamentService.getTournamentName(tripId));
-        response.setStandingsLabel(tripTournamentService.getStandingsLabel(tripId));
+        response.setTournamentName(tripTournamentService.getCompetitionName(tripId, competitionType));
+        response.setStandingsLabel(tripTournamentService.getCompetitionName(tripId, competitionType));
+        response.setCompetitionType(competitionType.name());
+        response.setCompetitionLabel(competitionType.getDisplayName());
         int requiredRoundCount = includedPlannedRounds.size();
         response.setRequiredRounds(requiredRoundCount);
         response.setCompletedRounds(eligibleRounds.size());
@@ -105,7 +119,8 @@ public class TournamentStandingsService {
             List<Scorecard> scorecards = scorecardRepository.findByRound_Id(round.getId());
 
             for (Scorecard scorecard : scorecards) {
-                if (scorecard.getPlayer() == null || scorecard.getNetScore() == null) {
+                Integer tournamentScore = competitionType.isNet() ? scorecard.getNetScore() : scorecard.getGrossScore();
+                if (scorecard.getPlayer() == null || tournamentScore == null) {
                     continue;
                 }
 
@@ -119,12 +134,12 @@ public class TournamentStandingsService {
                 roundResponse.setRoundId(round.getId());
                 roundResponse.setRoundNumber(round.getRoundNumber());
                 roundResponse.setLabel(buildRoundLabel(round));
-                roundResponse.setScore(scorecard.getNetScore());
-                roundResponse.setToPar(scorecard.getNetScore() - roundPar);
+                roundResponse.setScore(tournamentScore);
+                roundResponse.setToPar(tournamentScore - roundPar);
 
                 aggregate.rounds.add(roundResponse);
-                aggregate.totalScore += scorecard.getNetScore();
-                aggregate.totalToPar += (scorecard.getNetScore() - roundPar);
+                aggregate.totalScore += tournamentScore;
+                aggregate.totalToPar += (tournamentScore - roundPar);
                 aggregate.completedRounds++;
             }
         }
@@ -160,7 +175,7 @@ public class TournamentStandingsService {
         assignPositions(payoutEligibleRanked, currentlyExpectedRoundCount);
 
         if (leaderboardFinal) {
-            applyPayouts(tripId, payoutEligibleRanked);
+            applyPayouts(tripId, competitionType, payoutEligibleRanked);
         } else {
             clearPayouts(ranked);
         }
@@ -197,7 +212,7 @@ public class TournamentStandingsService {
             if (!Boolean.TRUE.equals(round.getFinalized())) {
                 continue;
             }
-            if (round.getFormat() == RoundFormat.TEAM_SCRAMBLE) {
+            if (roundEventCapabilityService.isScrambleRound(round)) {
                 continue;
             }
             finalizedByRoundNumber.put(round.getRoundNumber(), round);
@@ -284,15 +299,18 @@ public class TournamentStandingsService {
         }
     }
 
-    private void applyPayouts(Long tripId, List<PlayerAggregate> ranked) {
+    private void applyPayouts(Long tripId, TournamentCompetitionType competitionType, List<PlayerAggregate> ranked) {
         clearPayouts(ranked);
 
         if (ranked.isEmpty()) {
             return;
         }
 
-        PrizeSchedule schedule = prizeScheduleRepository.findByTrip_IdAndGameKey(tripId, TOURNAMENT_GAME_KEY)
+        PrizeSchedule schedule = prizeScheduleRepository.findByTrip_IdAndGameKey(tripId, tournamentGameKey(competitionType))
                 .orElse(null);
+        if (schedule == null && competitionType == TournamentCompetitionType.LOW_NET) {
+            schedule = prizeScheduleRepository.findByTrip_IdAndGameKey(tripId, LEGACY_TOURNAMENT_GAME_KEY).orElse(null);
+        }
 
         if (schedule == null || schedule.getPayouts() == null || schedule.getPayouts().isEmpty()) {
             return;
@@ -335,6 +353,13 @@ public class TournamentStandingsService {
 
             index = end + 1;
         }
+    }
+
+    private String tournamentGameKey(TournamentCompetitionType competitionType) {
+        if (competitionType == TournamentCompetitionType.LOW_GROSS) {
+            return TOURNAMENT_LOW_GROSS_GAME_KEY;
+        }
+        return TOURNAMENT_LOW_NET_GAME_KEY;
     }
 
     private void clearPayouts(List<PlayerAggregate> ranked) {

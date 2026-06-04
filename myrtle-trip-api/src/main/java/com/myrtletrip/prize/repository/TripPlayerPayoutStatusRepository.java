@@ -11,4 +11,6 @@ public interface TripPlayerPayoutStatusRepository extends JpaRepository<TripPlay
     Optional<TripPlayerPayoutStatus> findByTrip_IdAndPlayer_Id(Long tripId, Long playerId);
 
     List<TripPlayerPayoutStatus> findByTrip_Id(Long tripId);
+
+    void deleteByTrip_Id(Long tripId);
 }

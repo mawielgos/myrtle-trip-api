@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface TripBillInventoryRepository extends JpaRepository<TripBillInventory, Long> {
 
     Optional<TripBillInventory> findByTripId(Long tripId);
+
+    void deleteByTripId(Long tripId);
 }

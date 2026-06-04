@@ -200,7 +200,7 @@ public class CourseService {
         tee.setCourse(course);
         applyTeeValues(tee, request);
 
-        CourseTee saved = courseTeeRepository.save(tee);
+        CourseTee saved = courseTeeRepository.saveAndFlush(tee);
         return toCourseTeeResponse(saved);
     }
 
@@ -218,7 +218,7 @@ public class CourseService {
             courseTeeComboHoleRepository.deleteByComboTee_Id(teeId);
         }
 
-        CourseTee saved = courseTeeRepository.save(tee);
+        CourseTee saved = courseTeeRepository.saveAndFlush(tee);
         return toCourseTeeResponse(saved);
     }
 
@@ -466,6 +466,10 @@ public class CourseService {
     }
 
     private void applyTeeValues(CourseTee tee, SaveCourseTeeRequest request) {
+        if (tee == null || request == null) {
+            throw new IllegalArgumentException("Course tee request is required");
+        }
+
         tee.setTeeName(trimToNull(request.getTeeName()));
         tee.setTeeType(parseTeeType(request.getTeeType()));
         tee.setEffectiveDate(normalizeEffectiveDate(request.getEffectiveDate()));

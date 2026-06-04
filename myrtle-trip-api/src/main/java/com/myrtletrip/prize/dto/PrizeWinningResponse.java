@@ -10,6 +10,7 @@ public class PrizeWinningResponse {
     private String playerName;
     private String gameKey;
     private String gameName;
+    private String eventType;
     private Long roundId;
     private Integer roundNumber;
     private Integer sourceRank;
@@ -62,6 +63,14 @@ public class PrizeWinningResponse {
 
     public void setGameName(String gameName) {
         this.gameName = gameName;
+    }
+
+    public String getEventType() {
+        return eventType;
+    }
+
+    public void setEventType(String eventType) {
+        this.eventType = eventType;
     }
 
     public Long getRoundId() {

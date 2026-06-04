@@ -20,6 +20,8 @@ public class ScorecardDetailResponse {
     private String teeName;
     private String currentTeeName;
     private Long roundTeeId;
+    private String participationStatus;
+    private Integer withdrawalHoleNumber;
     private List<ScorecardHoleResponse> holes = new ArrayList<>();
 
     public Long getScorecardId() { return scorecardId; }
@@ -52,6 +54,10 @@ public class ScorecardDetailResponse {
     public void setCurrentTeeName(String currentTeeName) { this.currentTeeName = currentTeeName; }
     public Long getRoundTeeId() { return roundTeeId; }
     public void setRoundTeeId(Long roundTeeId) { this.roundTeeId = roundTeeId; }
+    public String getParticipationStatus() { return participationStatus; }
+    public void setParticipationStatus(String participationStatus) { this.participationStatus = participationStatus; }
+    public Integer getWithdrawalHoleNumber() { return withdrawalHoleNumber; }
+    public void setWithdrawalHoleNumber(Integer withdrawalHoleNumber) { this.withdrawalHoleNumber = withdrawalHoleNumber; }
     public List<ScorecardHoleResponse> getHoles() { return holes; }
     public void setHoles(List<ScorecardHoleResponse> holes) { this.holes = holes; }
 }

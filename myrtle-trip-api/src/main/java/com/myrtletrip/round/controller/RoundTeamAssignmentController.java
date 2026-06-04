@@ -1,6 +1,7 @@
 package com.myrtletrip.round.controller;
 
 import com.myrtletrip.round.dto.RoundTeamAssignmentPageResponse;
+import com.myrtletrip.round.dto.ScorecardParticipationRequest;
 import com.myrtletrip.round.dto.SaveRoundScrambleSeedingRequest;
 import com.myrtletrip.round.service.RoundTeamAssignmentService;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,15 @@ public class RoundTeamAssignmentController {
     @GetMapping("/{roundId}/team-assignment")
     public ResponseEntity<RoundTeamAssignmentPageResponse> getTeamAssignmentPage(@PathVariable Long roundId) {
         return ResponseEntity.ok(roundTeamAssignmentService.getAssignmentPage(roundId));
+    }
+
+    @PatchMapping("/{roundId}/team-assignment/scorecards/{scorecardId}/participation")
+    public ResponseEntity<RoundTeamAssignmentPageResponse> updateScorecardParticipation(
+            @PathVariable Long roundId,
+            @PathVariable Long scorecardId,
+            @RequestBody ScorecardParticipationRequest request
+    ) {
+        return ResponseEntity.ok(roundTeamAssignmentService.updateScorecardParticipation(roundId, scorecardId, request));
     }
 
     @PutMapping("/{roundId}/team-assignment/scramble-seeding")

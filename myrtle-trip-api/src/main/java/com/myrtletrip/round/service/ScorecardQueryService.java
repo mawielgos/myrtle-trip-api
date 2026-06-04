@@ -64,6 +64,8 @@ public class ScorecardQueryService {
                 : null);
         response.setCurrentTeeName(effectiveRoundTee != null ? effectiveRoundTee.getTeeName() : null);
         response.setRoundTeeId(effectiveRoundTee != null ? effectiveRoundTee.getId() : null);
+        response.setParticipationStatus(scorecard.getParticipationStatus() == null ? "ACTIVE" : scorecard.getParticipationStatus().name());
+        response.setWithdrawalHoleNumber(scorecard.getWithdrawalHoleNumber());
 
         Map<Integer, HoleScore> holeScoreByNumber = new HashMap<>();
         for (HoleScore holeScore : holeScores) {

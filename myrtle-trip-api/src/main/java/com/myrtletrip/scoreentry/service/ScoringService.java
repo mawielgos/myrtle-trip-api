@@ -3,14 +3,15 @@ package com.myrtletrip.scoreentry.service;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTee;
 import com.myrtletrip.round.entity.RoundTeeHole;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundTeeHoleRepository;
+import com.myrtletrip.round.service.RoundEventCapabilityService;
 import com.myrtletrip.round.service.RoundTeeResolver;
 import com.myrtletrip.scoreentry.dto.HoleScoreResponse;
 import com.myrtletrip.scoreentry.dto.RoundScorecardResponse;
 import com.myrtletrip.scoreentry.dto.ScorecardResponse;
 import com.myrtletrip.scoreentry.entity.HoleScore;
 import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.HoleScoreRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scorehistory.service.RoundScoreHistorySyncService;
@@ -31,19 +32,22 @@ public class ScoringService {
     private final RoundScoreHistorySyncService roundScoreHistorySyncService;
     private final RoundTeeResolver roundTeeResolver;
     private final TripEditingGuardService tripEditingGuardService;
+    private final RoundEventCapabilityService roundEventCapabilityService;
 
     public ScoringService(HoleScoreRepository holeRepo,
                           ScorecardRepository scorecardRepo,
                           RoundTeeHoleRepository roundTeeHoleRepository,
                           RoundScoreHistorySyncService roundScoreHistorySyncService,
                           RoundTeeResolver roundTeeResolver,
-                          TripEditingGuardService tripEditingGuardService) {
+                          TripEditingGuardService tripEditingGuardService,
+                          RoundEventCapabilityService roundEventCapabilityService) {
         this.holeRepo = holeRepo;
         this.scorecardRepo = scorecardRepo;
         this.roundTeeHoleRepository = roundTeeHoleRepository;
         this.roundScoreHistorySyncService = roundScoreHistorySyncService;
         this.roundTeeResolver = roundTeeResolver;
         this.tripEditingGuardService = tripEditingGuardService;
+        this.roundEventCapabilityService = roundEventCapabilityService;
     }
 
     @Transactional
@@ -141,6 +145,14 @@ public class ScoringService {
                 .orElseThrow(() -> new IllegalArgumentException("Scorecard not found"));
 
         Round round = scorecard.getRound();
+        if (isNoShowOrWithdrawnBeforeAnyHole(scorecard)) {
+            clearScorecardTotals(scorecard);
+            scorecardRepo.save(scorecard);
+            if (Boolean.TRUE.equals(round.getFinalized())) {
+                roundScoreHistorySyncService.syncFinalizedScorecard(scorecard);
+            }
+            return;
+        }
         RoundTee roundTee = roundTeeResolver.resolve(scorecard);
         if (scorecard.getRoundTee() == null) {
             scorecard.setRoundTee(roundTee);
@@ -182,6 +194,13 @@ public class ScoringService {
             }
 
             Integer strokes = holeScore.getStrokes();
+
+            if (!isHoleEligibleForScoring(scorecard, holeNumber)) {
+                holeScore.setNetStrokes(null);
+                holeScore.setAdjustedStrokes(null);
+                holeRepo.save(holeScore);
+                continue;
+            }
 
             if (strokes == null) {
                 holeScore.setNetStrokes(null);
@@ -239,8 +258,48 @@ public class ScoringService {
         }
     }
 
+    private boolean isNoShowOrWithdrawnBeforeAnyHole(Scorecard scorecard) {
+        if (scorecard == null || scorecard.getParticipationStatus() == null) {
+            return false;
+        }
+        if (ScorecardParticipationStatus.NO_SHOW.equals(scorecard.getParticipationStatus())) {
+            return true;
+        }
+        return ScorecardParticipationStatus.WITHDRAWN.equals(scorecard.getParticipationStatus())
+                && (scorecard.getWithdrawalHoleNumber() == null || scorecard.getWithdrawalHoleNumber() <= 0);
+    }
+
+    private boolean isHoleEligibleForScoring(Scorecard scorecard, int holeNumber) {
+        if (scorecard == null || scorecard.getParticipationStatus() == null) {
+            return true;
+        }
+        if (ScorecardParticipationStatus.ACTIVE.equals(scorecard.getParticipationStatus())) {
+            return true;
+        }
+        if (ScorecardParticipationStatus.WITHDRAWN.equals(scorecard.getParticipationStatus())) {
+            Integer withdrawalHoleNumber = scorecard.getWithdrawalHoleNumber();
+            return withdrawalHoleNumber != null && withdrawalHoleNumber > 0 && holeNumber <= withdrawalHoleNumber;
+        }
+        return false;
+    }
+
+    private void clearScorecardTotals(Scorecard scorecard) {
+        List<HoleScore> holeScores = holeRepo.findByScorecard_IdOrderByHoleNumberAsc(scorecard.getId());
+        for (HoleScore holeScore : holeScores) {
+            holeScore.setStrokes(null);
+            holeScore.setNetStrokes(null);
+            holeScore.setAdjustedStrokes(null);
+            holeRepo.save(holeScore);
+        }
+
+        scorecard.setGrossScore(null);
+        scorecard.setAdjustedGrossScore(null);
+        scorecard.setNetScore(null);
+        scorecard.setThruHole(null);
+    }
+
     private boolean isScramble(Round round) {
-        return round.getFormat() == RoundFormat.TEAM_SCRAMBLE;
+        return roundEventCapabilityService.isScrambleRound(round);
     }
 
     private int getStrokesForHole(int handicap, int holeHandicap) {

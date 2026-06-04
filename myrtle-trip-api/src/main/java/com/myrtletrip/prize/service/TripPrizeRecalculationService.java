@@ -1,5 +1,6 @@
 package com.myrtletrip.prize.service;
 
+import com.myrtletrip.event.model.RoundEventType;
 import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
 import com.myrtletrip.games.service.RoundGameScoringService;
@@ -38,11 +39,14 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class TripPrizeRecalculationService {
 
-    private static final String TOURNAMENT_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
+    private static final String TOURNAMENT_LOW_NET_GAME_KEY = TripPrizeService.TOURNAMENT_LOW_NET_GAME_KEY;
+    private static final String TOURNAMENT_LOW_GROSS_GAME_KEY = TripPrizeService.TOURNAMENT_LOW_GROSS_GAME_KEY;
+    private static final String LEGACY_TOURNAMENT_GAME_KEY = TripPrizeService.LEGACY_TOURNAMENT_GAME_KEY;
 
     private final TripRepository tripRepository;
     private final PrizeScheduleRepository prizeScheduleRepository;
@@ -87,6 +91,7 @@ public class TripPrizeRecalculationService {
         tripEditingGuardService.assertCorrectionAllowed(trip);
 
         tripPrizeService.getPrizeSchedules(tripId);
+        Set<String> activePrizeKeys = tripPrizeService.getActivePrizeScheduleKeys(tripId);
 
         prizeWinningRepository.deleteByTrip_Id(tripId);
 
@@ -95,11 +100,14 @@ public class TripPrizeRecalculationService {
         schedules.sort(Comparator.comparing(this::sortValue));
 
         for (PrizeSchedule schedule : schedules) {
+            if (!activePrizeKeys.contains(schedule.getGameKey())) {
+                continue;
+            }
             if (schedule.getPayouts() == null || schedule.getPayouts().isEmpty()) {
                 continue;
             }
 
-            if (TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
+            if (isTournamentSchedule(schedule.getGameKey())) {
                 winnings.addAll(calculateTournamentWinnings(trip, schedule));
             } else if (schedule.getRound() != null) {
                 winnings.addAll(calculateRoundWinnings(trip, schedule));
@@ -144,7 +152,11 @@ public class TripPrizeRecalculationService {
     }
 
     private List<PrizeWinning> calculateTournamentWinnings(Trip trip, PrizeSchedule schedule) {
-        TournamentStandingsResponse standings = tournamentStandingsService.getTournamentStandings(trip.getId());
+        String competition = "LOW_NET";
+        if (TOURNAMENT_LOW_GROSS_GAME_KEY.equals(schedule.getGameKey())) {
+            competition = "LOW_GROSS";
+        }
+        TournamentStandingsResponse standings = tournamentStandingsService.getTournamentStandings(trip.getId(), competition);
         List<PrizeUnit> units = new ArrayList<PrizeUnit>();
 
         if (!Boolean.TRUE.equals(standings.getLeaderboardFinal())) {
@@ -176,11 +188,16 @@ public class TripPrizeRecalculationService {
             return new ArrayList<PrizeWinning>();
         }
 
-        if (schedule.getResultScope() != null && "PLAYER".equals(schedule.getResultScope().name())) {
-            return buildWinningsFromUnits(trip, schedule, round, buildIndividualRoundUnits(round));
+        RoundEventType eventType = TripPrizeService.parseRoundEventTypeFromGameKey(schedule.getGameKey());
+        if (eventType == RoundEventType.INDIVIDUAL_LOW_GROSS) {
+            return buildWinningsFromUnits(trip, schedule, round, buildIndividualRoundUnits(round, true));
         }
 
-        RoundGameResult result = roundGameScoringService.getRoundResult(round.getId());
+        if (schedule.getResultScope() != null && "PLAYER".equals(schedule.getResultScope().name())) {
+            return buildWinningsFromUnits(trip, schedule, round, buildIndividualRoundUnits(round, false));
+        }
+
+        RoundGameResult result = roundGameScoringService.getRoundResult(round.getId(), eventType);
         List<PrizeUnit> units = new ArrayList<PrizeUnit>();
 
         for (TeamGameResult teamResult : result.getTeams()) {
@@ -206,40 +223,50 @@ public class TripPrizeRecalculationService {
         }
 
         if (units.isEmpty()) {
-            units = buildIndividualRoundUnits(round);
+            units = buildIndividualRoundUnits(round, false);
         }
 
         return buildWinningsFromUnits(trip, schedule, round, units);
     }
 
-    private List<PrizeUnit> buildIndividualRoundUnits(Round round) {
+    private List<PrizeUnit> buildIndividualRoundUnits(Round round, boolean grossScoring) {
         List<Scorecard> scorecards = scorecardRepository.findByRound_Id(round.getId());
         List<Scorecard> completed = new ArrayList<Scorecard>();
 
         for (Scorecard scorecard : scorecards) {
-            if (scorecard.getPlayer() != null && scorecard.getNetScore() != null) {
+            Integer score = grossScoring ? scorecard.getGrossScore() : scorecard.getNetScore();
+            if (scorecard.getPlayer() != null && score != null) {
                 completed.add(scorecard);
             }
         }
 
-        completed.sort(
-                Comparator.comparing(Scorecard::getNetScore, Comparator.nullsLast(Integer::compareTo))
-                        .thenComparing(scorecard -> scorecard.getPlayer().getDisplayName(), String.CASE_INSENSITIVE_ORDER)
-        );
+        completed.sort(new Comparator<Scorecard>() {
+            @Override
+            public int compare(Scorecard a, Scorecard b) {
+                Integer aScore = grossScoring ? a.getGrossScore() : a.getNetScore();
+                Integer bScore = grossScoring ? b.getGrossScore() : b.getNetScore();
+                int scoreCompare = Comparator.nullsLast(Integer::compareTo).compare(aScore, bScore);
+                if (scoreCompare != 0) {
+                    return scoreCompare;
+                }
+                return String.CASE_INSENSITIVE_ORDER.compare(a.getPlayer().getDisplayName(), b.getPlayer().getDisplayName());
+            }
+        });
 
         List<PrizeUnit> units = new ArrayList<PrizeUnit>();
-        Integer previousNet = null;
+        Integer previousScore = null;
         Integer previousRank = null;
 
         for (int i = 0; i < completed.size(); i++) {
             Scorecard scorecard = completed.get(i);
+            Integer score = grossScoring ? scorecard.getGrossScore() : scorecard.getNetScore();
             Integer currentRank;
-            if (previousNet != null && previousNet.equals(scorecard.getNetScore())) {
+            if (previousScore != null && previousScore.equals(score)) {
                 currentRank = previousRank;
             } else {
                 currentRank = i + 1;
                 previousRank = currentRank;
-                previousNet = scorecard.getNetScore();
+                previousScore = score;
             }
 
             Player player = scorecard.getPlayer();
@@ -355,6 +382,8 @@ public class TripPrizeRecalculationService {
             winningResponse.setPlayerName(winning.getPlayer().getDisplayName());
             winningResponse.setGameKey(winning.getGameKey());
             winningResponse.setGameName(winning.getGameName());
+            RoundEventType responseEventType = TripPrizeService.parseRoundEventTypeFromGameKey(winning.getGameKey());
+            winningResponse.setEventType(responseEventType == null ? null : responseEventType.name());
             winningResponse.setSourceRank(winning.getSourceRank());
             winningResponse.setSourceName(winning.getSourceName());
             winningResponse.setAmount(amount);
@@ -412,9 +441,18 @@ public class TripPrizeRecalculationService {
         return amount.setScale(0, RoundingMode.DOWN);
     }
 
+    private boolean isTournamentSchedule(String gameKey) {
+        return TOURNAMENT_LOW_NET_GAME_KEY.equals(gameKey)
+                || TOURNAMENT_LOW_GROSS_GAME_KEY.equals(gameKey)
+                || LEGACY_TOURNAMENT_GAME_KEY.equals(gameKey);
+    }
+
     private Integer sortValue(PrizeSchedule schedule) {
-        if (TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
+        if (TOURNAMENT_LOW_NET_GAME_KEY.equals(schedule.getGameKey()) || LEGACY_TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
             return 0;
+        }
+        if (TOURNAMENT_LOW_GROSS_GAME_KEY.equals(schedule.getGameKey())) {
+            return 1;
         }
         if (schedule.getRound() != null && schedule.getRound().getRoundNumber() != null) {
             return schedule.getRound().getRoundNumber() * 10;

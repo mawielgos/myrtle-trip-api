@@ -1,5 +1,8 @@
 package com.myrtletrip.prize.service;
 
+import com.myrtletrip.event.entity.RoundEvent;
+import com.myrtletrip.event.model.RoundEventType;
+import com.myrtletrip.event.repository.RoundEventRepository;
 import com.myrtletrip.prize.dto.PrizeSchedulePayoutResponse;
 import com.myrtletrip.prize.dto.PrizeScheduleResponse;
 import com.myrtletrip.prize.dto.SavePrizeSchedulePayoutRequest;
@@ -12,12 +15,13 @@ import com.myrtletrip.prize.model.PrizeResultScope;
 import com.myrtletrip.prize.repository.PrizeSchedulePayoutRepository;
 import com.myrtletrip.prize.repository.PrizeScheduleRepository;
 import com.myrtletrip.round.entity.Round;
-import com.myrtletrip.round.model.RoundFormat;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.tournament.entity.TripTournament;
 import com.myrtletrip.tournament.repository.TripTournamentRepository;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripPlannedRound;
+import com.myrtletrip.trip.entity.TripPlannedRoundEvent;
+import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
 import com.myrtletrip.trip.repository.TripRepository;
 import com.myrtletrip.trip.service.TripEditingGuardService;
@@ -28,17 +32,25 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class TripPrizeService {
 
-    private static final String TOURNAMENT_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
+    public static final String LEGACY_TOURNAMENT_GAME_KEY = "FOUR_DAY_INDIVIDUAL";
+    public static final String TOURNAMENT_LOW_NET_GAME_KEY = "TOURNAMENT_LOW_NET";
+    public static final String TOURNAMENT_LOW_GROSS_GAME_KEY = "TOURNAMENT_LOW_GROSS";
+    public static final String ROUND_EVENT_KEY_PREFIX = "ROUND_NUMBER_";
+    public static final String ROUND_EVENT_KEY_SEPARATOR = "_EVENT_";
 
     private final TripRepository tripRepository;
     private final RoundRepository roundRepository;
     private final TripPlannedRoundRepository tripPlannedRoundRepository;
+    private final TripPlannedRoundEventRepository tripPlannedRoundEventRepository;
+    private final RoundEventRepository roundEventRepository;
     private final PrizeScheduleRepository prizeScheduleRepository;
     private final PrizeSchedulePayoutRepository prizeSchedulePayoutRepository;
     private final TripTournamentRepository tripTournamentRepository;
@@ -47,6 +59,8 @@ public class TripPrizeService {
     public TripPrizeService(TripRepository tripRepository,
                             RoundRepository roundRepository,
                             TripPlannedRoundRepository tripPlannedRoundRepository,
+                            TripPlannedRoundEventRepository tripPlannedRoundEventRepository,
+                            RoundEventRepository roundEventRepository,
                             PrizeScheduleRepository prizeScheduleRepository,
                             PrizeSchedulePayoutRepository prizeSchedulePayoutRepository,
                             TripTournamentRepository tripTournamentRepository,
@@ -54,6 +68,8 @@ public class TripPrizeService {
         this.tripRepository = tripRepository;
         this.roundRepository = roundRepository;
         this.tripPlannedRoundRepository = tripPlannedRoundRepository;
+        this.tripPlannedRoundEventRepository = tripPlannedRoundEventRepository;
+        this.roundEventRepository = roundEventRepository;
         this.prizeScheduleRepository = prizeScheduleRepository;
         this.prizeSchedulePayoutRepository = prizeSchedulePayoutRepository;
         this.tripTournamentRepository = tripTournamentRepository;
@@ -66,6 +82,11 @@ public class TripPrizeService {
         return loadResponses(tripId);
     }
 
+    @Transactional(readOnly = true)
+    public Set<String> getActivePrizeScheduleKeys(Long tripId) {
+        return buildEligiblePrizeKeys(tripId);
+    }
+
     @Transactional
     public List<PrizeScheduleResponse> savePrizeSchedules(Long tripId, SaveTripPrizeSchedulesRequest request) {
         Trip trip = tripRepository.findById(tripId)
@@ -73,6 +94,7 @@ public class TripPrizeService {
         tripEditingGuardService.assertStructureEditable(trip);
 
         ensureDefaultSchedules(tripId);
+        Set<String> eligibleKeys = buildEligiblePrizeKeys(tripId);
 
         Map<String, PrizeSchedule> schedulesByKey = new HashMap<>();
         List<PrizeSchedule> existingSchedules = prizeScheduleRepository.findByTrip_IdOrderByIdAsc(tripId);
@@ -83,6 +105,9 @@ public class TripPrizeService {
         if (request != null && request.getSchedules() != null) {
             for (SavePrizeScheduleRequest scheduleRequest : request.getSchedules()) {
                 if (scheduleRequest == null || scheduleRequest.getGameKey() == null) {
+                    continue;
+                }
+                if (!eligibleKeys.contains(scheduleRequest.getGameKey())) {
                     continue;
                 }
 
@@ -142,15 +167,15 @@ public class TripPrizeService {
     }
 
     private List<PrizeScheduleResponse> loadResponses(Long tripId) {
+        Set<String> eligibleKeys = buildEligiblePrizeKeys(tripId);
         List<PrizeSchedule> schedules = prizeScheduleRepository.findByTrip_IdOrderByIdAsc(tripId);
-        schedules.sort((a, b) -> {
-            Integer aSort = sortValue(a);
-            Integer bSort = sortValue(b);
-            return aSort.compareTo(bSort);
-        });
+        schedules.sort((a, b) -> sortValue(a).compareTo(sortValue(b)));
 
         List<PrizeScheduleResponse> responses = new ArrayList<>();
         for (PrizeSchedule schedule : schedules) {
+            if (!eligibleKeys.contains(schedule.getGameKey())) {
+                continue;
+            }
             responses.add(toResponse(schedule));
         }
         return responses;
@@ -162,20 +187,12 @@ public class TripPrizeService {
 
         List<PrizeSchedule> existingSchedules = prizeScheduleRepository.findByTrip_IdOrderByIdAsc(tripId);
 
-        String tournamentPrizeName = resolveTournamentPrizeName(tripId);
-        PrizeSchedule tournamentSchedule = findByGameKey(existingSchedules, TOURNAMENT_GAME_KEY);
-        if (tournamentSchedule == null) {
-            tournamentSchedule = new PrizeSchedule();
-            tournamentSchedule.setTrip(trip);
-            tournamentSchedule.setGameKey(TOURNAMENT_GAME_KEY);
-            tournamentSchedule.setGameName(tournamentPrizeName);
-            tournamentSchedule.setResultScope(PrizeResultScope.PLAYER);
-            tournamentSchedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
-            prizeScheduleRepository.save(tournamentSchedule);
-            existingSchedules.add(tournamentSchedule);
-        } else if (isLegacyTournamentGameName(tournamentSchedule.getGameName())) {
-            tournamentSchedule.setGameName(tournamentPrizeName);
-            prizeScheduleRepository.save(tournamentSchedule);
+        TripTournament tournament = tripTournamentRepository.findByTrip_Id(tripId).orElse(null);
+        if (isTournamentPrizeEligible(tournament)) {
+            ensureTournamentSchedule(trip, existingSchedules, TOURNAMENT_LOW_NET_GAME_KEY, resolveTournamentPrizeName(tournament, "Low Net"), true);
+            if (Boolean.TRUE.equals(tournament.getLowGrossEnabled())) {
+                ensureTournamentSchedule(trip, existingSchedules, TOURNAMENT_LOW_GROSS_GAME_KEY, resolveTournamentPrizeName(tournament, "Low Gross"), false);
+            }
         }
 
         List<Round> rounds = roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId);
@@ -188,76 +205,227 @@ public class TripPrizeService {
 
         List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
         for (TripPlannedRound plannedRound : plannedRounds) {
-            if (plannedRound == null || plannedRound.getRoundNumber() == null || plannedRound.getFormat() == null) {
+            if (plannedRound == null || plannedRound.getRoundNumber() == null) {
                 continue;
             }
 
-            String plannedGameKey = buildPlannedRoundGameKey(plannedRound);
             Round matchingRound = roundsByNumber.get(plannedRound.getRoundNumber());
-            PrizeSchedule schedule = findRoundSchedule(existingSchedules, plannedRound.getRoundNumber(), matchingRound, plannedGameKey);
+            List<PrizeEventDescriptor> descriptors = buildPrizeEventDescriptors(plannedRound, matchingRound);
+            for (PrizeEventDescriptor descriptor : descriptors) {
+                PrizeSchedule schedule = findByGameKey(existingSchedules, descriptor.gameKey);
+                if (schedule == null) {
+                    schedule = new PrizeSchedule();
+                    schedule.setTrip(trip);
+                    schedule.setGameKey(descriptor.gameKey);
+                    schedule.setGameName(descriptor.gameName);
+                    schedule.setResultScope(descriptor.resultScope);
+                    schedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
+                    existingSchedules.add(schedule);
+                }
 
-            if (schedule == null) {
-                schedule = new PrizeSchedule();
-                schedule.setTrip(trip);
-                schedule.setGameKey(plannedGameKey);
-                schedule.setGameName(buildPlannedRoundGameName(plannedRound));
-                schedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
-                existingSchedules.add(schedule);
+                if (matchingRound != null && schedule.getRound() == null) {
+                    schedule.setRound(matchingRound);
+                }
+
+                schedule.setResultScope(descriptor.resultScope);
+                if (schedule.getGameName() == null || schedule.getGameName().isBlank() || isDefaultRoundGameName(schedule.getGameName())) {
+                    schedule.setGameName(descriptor.gameName);
+                }
+                prizeScheduleRepository.save(schedule);
             }
-
-            if (matchingRound != null && schedule.getRound() == null) {
-                schedule.setRound(matchingRound);
-            }
-
-            RoundFormat format = matchingRound != null && matchingRound.getFormat() != null
-                    ? matchingRound.getFormat()
-                    : plannedRound.getFormat();
-            schedule.setResultScope(format != null && format.requiresTeams()
-                    ? PrizeResultScope.TEAM
-                    : PrizeResultScope.PLAYER);
-
-            if (schedule.getGameName() == null || schedule.getGameName().isBlank() || isDefaultRoundGameName(schedule.getGameName())) {
-                schedule.setGameName(buildPlannedRoundGameName(plannedRound));
-            }
-
-            prizeScheduleRepository.save(schedule);
         }
 
         for (Round round : rounds) {
-            if (round.getRoundNumber() == null || round.getFormat() == null) {
+            if (round.getRoundNumber() == null) {
                 continue;
             }
 
-            String gameKey = buildRoundGameKey(round);
-            PrizeSchedule schedule = findRoundSchedule(existingSchedules, round.getRoundNumber(), round, gameKey);
-            if (schedule != null) {
-                if (schedule.getRound() == null) {
-                    schedule.setRound(round);
-                    prizeScheduleRepository.save(schedule);
+            List<RoundEvent> events = roundEventRepository.findByRound_IdAndActiveTrueOrderByEventOrderAsc(round.getId());
+            if (events.isEmpty()) {
+                continue;
+            }
+
+            for (RoundEvent event : events) {
+                PrizeEventDescriptor descriptor = descriptorForRoundEvent(round.getRoundNumber(), event.getEventType(), event.getEventName());
+                PrizeSchedule schedule = findByGameKey(existingSchedules, descriptor.gameKey);
+                if (schedule == null) {
+                    schedule = new PrizeSchedule();
+                    schedule.setTrip(trip);
+                    schedule.setGameKey(descriptor.gameKey);
+                    schedule.setGameName(descriptor.gameName);
+                    schedule.setResultScope(descriptor.resultScope);
+                    schedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
+                    existingSchedules.add(schedule);
                 }
-                continue;
+                schedule.setRound(round);
+                schedule.setResultScope(descriptor.resultScope);
+                if (schedule.getGameName() == null || schedule.getGameName().isBlank() || isDefaultRoundGameName(schedule.getGameName())) {
+                    schedule.setGameName(descriptor.gameName);
+                }
+                prizeScheduleRepository.save(schedule);
             }
-
-            schedule = new PrizeSchedule();
-            schedule.setTrip(trip);
-            schedule.setRound(round);
-            schedule.setGameKey(gameKey);
-            schedule.setGameName(buildRoundGameName(round));
-            schedule.setResultScope(round.getFormat() != null && round.getFormat().requiresTeams()
-                    ? PrizeResultScope.TEAM
-                    : PrizeResultScope.PLAYER);
-            schedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
-            prizeScheduleRepository.save(schedule);
-            existingSchedules.add(schedule);
         }
     }
 
-    private String resolveTournamentPrizeName(Long tripId) {
-        TripTournament tournament = tripTournamentRepository.findByTrip_Id(tripId).orElse(null);
-        if (tournament != null && tournament.getName() != null && !tournament.getName().isBlank()) {
-            return tournament.getName().trim();
+    private Set<String> buildEligiblePrizeKeys(Long tripId) {
+        Set<String> keys = new LinkedHashSet<>();
+        Trip trip = tripRepository.findById(tripId).orElse(null);
+        if (trip == null) {
+            return keys;
         }
-        return "Multi-Round Tournament";
+
+        TripTournament tournament = tripTournamentRepository.findByTrip_Id(tripId).orElse(null);
+        if (isTournamentPrizeEligible(tournament)) {
+            if (tournament.getLowNetEnabled() == null || Boolean.TRUE.equals(tournament.getLowNetEnabled())) {
+                keys.add(TOURNAMENT_LOW_NET_GAME_KEY);
+                keys.add(LEGACY_TOURNAMENT_GAME_KEY);
+            }
+            if (Boolean.TRUE.equals(tournament.getLowGrossEnabled())) {
+                keys.add(TOURNAMENT_LOW_GROSS_GAME_KEY);
+            }
+        }
+
+        List<Round> rounds = roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId);
+        Map<Integer, Round> roundsByNumber = new HashMap<>();
+        for (Round round : rounds) {
+            if (round.getRoundNumber() != null) {
+                roundsByNumber.put(round.getRoundNumber(), round);
+            }
+        }
+
+        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
+        for (TripPlannedRound plannedRound : plannedRounds) {
+            if (plannedRound == null || plannedRound.getRoundNumber() == null) {
+                continue;
+            }
+            Round matchingRound = roundsByNumber.get(plannedRound.getRoundNumber());
+            for (PrizeEventDescriptor descriptor : buildPrizeEventDescriptors(plannedRound, matchingRound)) {
+                keys.add(descriptor.gameKey);
+            }
+        }
+
+        for (Round round : rounds) {
+            if (round.getRoundNumber() == null) {
+                continue;
+            }
+            List<RoundEvent> events = roundEventRepository.findByRound_IdAndActiveTrueOrderByEventOrderAsc(round.getId());
+            for (RoundEvent event : events) {
+                keys.add(buildRoundEventGameKey(round.getRoundNumber(), event.getEventType()));
+            }
+        }
+
+        return keys;
+    }
+
+    private List<PrizeEventDescriptor> buildPrizeEventDescriptors(TripPlannedRound plannedRound, Round matchingRound) {
+        List<PrizeEventDescriptor> descriptors = new ArrayList<>();
+        if (matchingRound != null) {
+            List<RoundEvent> events = roundEventRepository.findByRound_IdAndActiveTrueOrderByEventOrderAsc(matchingRound.getId());
+            if (!events.isEmpty()) {
+                for (RoundEvent event : events) {
+                    descriptors.add(descriptorForRoundEvent(plannedRound.getRoundNumber(), event.getEventType(), event.getEventName()));
+                }
+                return descriptors;
+            }
+        }
+
+        List<TripPlannedRoundEvent> plannedEvents = tripPlannedRoundEventRepository.findByPlannedRound_IdOrderByEventOrderAsc(plannedRound.getId());
+        if (plannedEvents.isEmpty() && plannedRound.getFormat() != null) {
+            RoundEventType legacyType = RoundEventType.fromLegacyRoundFormat(plannedRound.getFormat());
+            descriptors.add(descriptorForRoundEvent(plannedRound.getRoundNumber(), legacyType, legacyType.defaultName(plannedRound.getScrambleTeamSize())));
+            return descriptors;
+        }
+
+        for (TripPlannedRoundEvent event : plannedEvents) {
+            descriptors.add(descriptorForRoundEvent(plannedRound.getRoundNumber(), event.getEventType(), event.getEventName()));
+        }
+        return descriptors;
+    }
+
+    private PrizeEventDescriptor descriptorForRoundEvent(Integer roundNumber, RoundEventType eventType, String eventName) {
+        PrizeEventDescriptor descriptor = new PrizeEventDescriptor();
+        descriptor.gameKey = buildRoundEventGameKey(roundNumber, eventType);
+        descriptor.gameName = buildRoundEventGameName(roundNumber, eventType, eventName);
+        descriptor.resultScope = eventType != null && eventType.isTeamEvent() ? PrizeResultScope.TEAM : PrizeResultScope.PLAYER;
+        return descriptor;
+    }
+
+    public static String buildRoundEventGameKey(Integer roundNumber, RoundEventType eventType) {
+        return ROUND_EVENT_KEY_PREFIX + roundNumber + ROUND_EVENT_KEY_SEPARATOR + eventType;
+    }
+
+    public static RoundEventType parseRoundEventTypeFromGameKey(String gameKey) {
+        if (gameKey == null) {
+            return null;
+        }
+        int index = gameKey.indexOf(ROUND_EVENT_KEY_SEPARATOR);
+        if (index < 0) {
+            return null;
+        }
+        String eventTypeText = gameKey.substring(index + ROUND_EVENT_KEY_SEPARATOR.length());
+        try {
+            return RoundEventType.valueOf(eventTypeText);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private String buildRoundEventGameName(Integer roundNumber, RoundEventType eventType, String eventName) {
+        String label = eventName;
+        if (label == null || label.isBlank()) {
+            label = eventType == null ? "Event" : eventType.defaultName(null);
+        }
+        if (roundNumber == null) {
+            return label;
+        }
+        return "Round " + roundNumber + " - " + label.trim();
+    }
+
+    private boolean isTournamentPrizeEligible(TripTournament tournament) {
+        return tournament != null
+                && Boolean.TRUE.equals(tournament.getEnabled())
+                && tournament.getRounds() != null
+                && tournament.getRounds().size() >= 2;
+    }
+
+    private void ensureTournamentSchedule(Trip trip, List<PrizeSchedule> existingSchedules, String gameKey, String gameName, boolean migrateLegacy) {
+        PrizeSchedule schedule = findByGameKey(existingSchedules, gameKey);
+        if (schedule == null && migrateLegacy) {
+            schedule = findByGameKey(existingSchedules, LEGACY_TOURNAMENT_GAME_KEY);
+            if (schedule != null) {
+                schedule.setGameKey(gameKey);
+            }
+        }
+        if (schedule == null) {
+            schedule = new PrizeSchedule();
+            schedule.setTrip(trip);
+            schedule.setGameKey(gameKey);
+            schedule.setGameName(gameName);
+            schedule.setResultScope(PrizeResultScope.PLAYER);
+            schedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
+            existingSchedules.add(schedule);
+        } else if (isLegacyTournamentGameName(schedule.getGameName())) {
+            schedule.setGameName(gameName);
+        }
+        schedule.setResultScope(PrizeResultScope.PLAYER);
+        schedule.setPayoutUnit(PrizePayoutUnit.PLAYER);
+        prizeScheduleRepository.save(schedule);
+    }
+
+    private String resolveTournamentPrizeName(TripTournament tournament, String competitionLabel) {
+        if (tournament != null) {
+            if ("Low Gross".equalsIgnoreCase(competitionLabel)
+                    && tournament.getLowGrossName() != null
+                    && !tournament.getLowGrossName().isBlank()) {
+                return tournament.getLowGrossName().trim();
+            }
+            if ("Low Net".equalsIgnoreCase(competitionLabel)
+                    && tournament.getLowNetName() != null
+                    && !tournament.getLowNetName().isBlank()) {
+                return tournament.getLowNetName().trim();
+            }
+        }
+        return "Multi-Round Tournament - " + competitionLabel;
     }
 
     private boolean isLegacyTournamentGameName(String gameName) {
@@ -268,7 +436,11 @@ public class TripPrizeService {
         return "Multi-Round Individual Low Net".equalsIgnoreCase(normalized)
                 || "Four Day Individual Low Net".equalsIgnoreCase(normalized)
                 || "Multi-Round Tournament".equalsIgnoreCase(normalized)
-                || "Tournament Standings".equalsIgnoreCase(normalized);
+                || "Tournament Standings".equalsIgnoreCase(normalized)
+                || "Low Net Tournament".equalsIgnoreCase(normalized)
+                || "Low Gross Tournament".equalsIgnoreCase(normalized)
+                || "Low Net Tournament - Low Gross".equalsIgnoreCase(normalized)
+                || "Tournament - Low Gross".equalsIgnoreCase(normalized);
     }
 
     private PrizeSchedule findByGameKey(List<PrizeSchedule> schedules, String gameKey) {
@@ -277,38 +449,6 @@ public class TripPrizeService {
                 return schedule;
             }
         }
-        return null;
-    }
-
-    private PrizeSchedule findRoundSchedule(List<PrizeSchedule> schedules,
-                                            Integer roundNumber,
-                                            Round round,
-                                            String preferredGameKey) {
-        PrizeSchedule byPreferredKey = findByGameKey(schedules, preferredGameKey);
-        if (byPreferredKey != null) {
-            return byPreferredKey;
-        }
-
-        if (round != null && round.getId() != null) {
-            for (PrizeSchedule schedule : schedules) {
-                if (schedule != null && schedule.getRound() != null && round.getId().equals(schedule.getRound().getId())) {
-                    return schedule;
-                }
-            }
-        }
-
-        for (PrizeSchedule schedule : schedules) {
-            if (schedule == null || TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
-                continue;
-            }
-            if (schedule.getRound() != null && roundNumber.equals(schedule.getRound().getRoundNumber())) {
-                return schedule;
-            }
-            if (schedule.getGameKey() != null && schedule.getGameKey().equals("ROUND_NUMBER_" + roundNumber)) {
-                return schedule;
-            }
-        }
-
         return null;
     }
 
@@ -321,11 +461,7 @@ public class TripPrizeService {
         response.setScheduleId(schedule.getId());
         response.setTripId(schedule.getTrip().getId());
         response.setGameKey(schedule.getGameKey());
-        if (TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
-            response.setGameName(resolveTournamentPrizeName(schedule.getTrip().getId()));
-        } else {
-            response.setGameName(schedule.getGameName());
-        }
+        response.setGameName(schedule.getGameName());
         response.setResultScope(schedule.getResultScope().name());
         response.setPayoutUnit(schedule.getPayoutUnit().name());
 
@@ -350,64 +486,48 @@ public class TripPrizeService {
     }
 
     private Integer sortValue(PrizeSchedule schedule) {
-        if (TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
+        if (TOURNAMENT_LOW_NET_GAME_KEY.equals(schedule.getGameKey()) || LEGACY_TOURNAMENT_GAME_KEY.equals(schedule.getGameKey())) {
             return 0;
+        }
+        if (TOURNAMENT_LOW_GROSS_GAME_KEY.equals(schedule.getGameKey())) {
+            return 1;
         }
 
         if (schedule.getRound() != null && schedule.getRound().getRoundNumber() != null) {
-            return schedule.getRound().getRoundNumber() * 10;
+            return schedule.getRound().getRoundNumber() * 10 + eventSortOffset(schedule.getGameKey());
+        }
+
+        String key = schedule.getGameKey();
+        if (key != null && key.startsWith(ROUND_EVENT_KEY_PREFIX)) {
+            String withoutPrefix = key.substring(ROUND_EVENT_KEY_PREFIX.length());
+            int separatorIndex = withoutPrefix.indexOf(ROUND_EVENT_KEY_SEPARATOR);
+            if (separatorIndex > 0) {
+                try {
+                    Integer roundNumber = Integer.valueOf(withoutPrefix.substring(0, separatorIndex));
+                    return roundNumber * 10 + eventSortOffset(key);
+                } catch (NumberFormatException ignored) {
+                    return 9999;
+                }
+            }
         }
 
         return 9999;
     }
 
-    private String buildRoundGameKey(Round round) {
-        if (round.getRoundNumber() != null) {
-            return "ROUND_NUMBER_" + round.getRoundNumber();
+    private Integer eventSortOffset(String gameKey) {
+        RoundEventType eventType = parseRoundEventTypeFromGameKey(gameKey);
+        if (eventType == null) {
+            return 0;
         }
-        return "ROUND_" + round.getId();
-    }
-
-    private String buildPlannedRoundGameKey(TripPlannedRound plannedRound) {
-        return "ROUND_NUMBER_" + plannedRound.getRoundNumber();
-    }
-
-    private String buildRoundGameName(Round round) {
-        return buildRoundGameName(round.getRoundNumber(), round.getFormat(), round.getScrambleTeamSize());
-    }
-
-    private String buildPlannedRoundGameName(TripPlannedRound plannedRound) {
-        return buildRoundGameName(plannedRound.getRoundNumber(), plannedRound.getFormat(), plannedRound.getScrambleTeamSize());
-    }
-
-    private String buildRoundGameName(Integer roundNumber, RoundFormat format) {
-        return buildRoundGameName(roundNumber, format, null);
-    }
-
-    private String buildRoundGameName(Integer roundNumber, RoundFormat format, Integer scrambleTeamSize) {
-        String formatLabel = formatLabel(format, scrambleTeamSize);
-        if (roundNumber == null) {
-            return formatLabel;
-        }
-        return "Round " + roundNumber + " - " + formatLabel;
-    }
-
-    private String formatLabel(RoundFormat format) {
-        return formatLabel(format, null);
-    }
-
-    private String formatLabel(RoundFormat format, Integer scrambleTeamSize) {
-        if (format == null) {
-            return "Game";
-        }
-
-        return switch (format) {
-            case MIDDLE_MAN -> "Middle Man";
-            case ONE_TWO_THREE -> "1-2-3";
-            case TWO_MAN_LOW_NET -> "2-Man Low Net";
-            case THREE_LOW_NET -> "3 Low Net";
-            case TEAM_SCRAMBLE -> (scrambleTeamSize == null ? 4 : scrambleTeamSize) + "-Person Scramble";
-            case STROKE_PLAY -> "Stroke Play";
+        return switch (eventType) {
+            case INDIVIDUAL_LOW_NET -> 1;
+            case INDIVIDUAL_LOW_GROSS -> 2;
+            case TEAM_TWO_MAN_LOW_NET -> 3;
+            case TEAM_TWO_LOW_NET -> 4;
+            case TEAM_MIDDLE_MAN -> 5;
+            case TEAM_ONE_TWO_THREE -> 6;
+            case TEAM_THREE_LOW_NET -> 7;
+            case TEAM_SCRAMBLE -> 8;
         };
     }
 
@@ -433,5 +553,11 @@ public class TripPrizeService {
         } catch (IllegalArgumentException ex) {
             return fallback;
         }
+    }
+
+    private static class PrizeEventDescriptor {
+        private String gameKey;
+        private String gameName;
+        private PrizeResultScope resultScope;
     }
 }

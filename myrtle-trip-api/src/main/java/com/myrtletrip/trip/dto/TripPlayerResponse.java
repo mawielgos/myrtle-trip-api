@@ -14,6 +14,8 @@ public class TripPlayerResponse {
     private Long dbScoreHistoryCount;
     private Long tripScoreCount;
     private Boolean usableHandicapIndex;
+    private String participationStatus;
+    private Long unavailableRoundCount;
 
     public Long getPlayerId() {
         return playerId;
@@ -93,5 +95,21 @@ public class TripPlayerResponse {
 
     public void setUsableHandicapIndex(Boolean usableHandicapIndex) {
         this.usableHandicapIndex = usableHandicapIndex;
+    }
+
+    public String getParticipationStatus() {
+        return participationStatus;
+    }
+
+    public void setParticipationStatus(String participationStatus) {
+        this.participationStatus = participationStatus;
+    }
+
+    public Long getUnavailableRoundCount() {
+        return unavailableRoundCount;
+    }
+
+    public void setUnavailableRoundCount(Long unavailableRoundCount) {
+        this.unavailableRoundCount = unavailableRoundCount;
     }
 }
