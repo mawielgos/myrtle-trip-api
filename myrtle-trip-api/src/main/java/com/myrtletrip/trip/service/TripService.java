@@ -106,6 +106,7 @@ public class TripService {
     private final TripTournamentRepository tripTournamentRepository;
     private final TripTournamentRoundRepository tripTournamentRoundRepository;
     private final RoundEventCapabilityService roundEventCapabilityService;
+    private final TripParticipationService tripParticipationService;
 
     public TripService(TripRepository tripRepository,
                        TripPlayerRepository tripPlayerRepository,
@@ -131,7 +132,8 @@ public class TripService {
                        TripBillInventoryRepository tripBillInventoryRepository,
                        TripTournamentRepository tripTournamentRepository,
                        TripTournamentRoundRepository tripTournamentRoundRepository,
-                       RoundEventCapabilityService roundEventCapabilityService) {
+                       RoundEventCapabilityService roundEventCapabilityService,
+                       TripParticipationService tripParticipationService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.playerRepository = playerRepository;
@@ -157,6 +159,7 @@ public class TripService {
         this.tripTournamentRepository = tripTournamentRepository;
         this.tripTournamentRoundRepository = tripTournamentRoundRepository;
         this.roundEventCapabilityService = roundEventCapabilityService;
+        this.tripParticipationService = tripParticipationService;
     }
 
     @Transactional
@@ -361,7 +364,7 @@ public class TripService {
             response.setFrozenHandicapIndex(tripPlayer.getFrozenHandicapIndex());
             ScorecardParticipationStatus participationStatus = tripPlayer.getParticipationStatus();
             response.setParticipationStatus(participationStatus == null ? ScorecardParticipationStatus.ACTIVE.name() : participationStatus.name());
-            response.setUnavailableRoundCount(countUnavailableRounds(tripId, player.getId()));
+            response.setUnavailableRoundCount(tripParticipationService.countUnavailableRounds(tripId, player.getId()));
             response.setGhinHistoryCount(countUsableGhinHistoryRows(player, trip.getTripCode()));
             response.setDbScoreHistoryCount(countUsableDbScoreHistoryRows(player));
             response.setTripScoreCount(countUsableTripScoreRows(player));
@@ -388,66 +391,8 @@ public class TripService {
 
     @Transactional
     public List<TripPlayerResponse> updateTripPlayerParticipation(Long tripId, Long playerId, String participationStatusText) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-
-        TripPlayer tripPlayer = tripPlayerRepository.findByTrip_IdAndPlayer_Id(tripId, playerId)
-                .orElseThrow(() -> new IllegalArgumentException("Player is not on this event roster."));
-
-        ScorecardParticipationStatus nextStatus = parseParticipationStatus(participationStatusText);
-        tripPlayer.setParticipationStatus(nextStatus);
-        tripPlayerRepository.save(tripPlayer);
-
-        List<Round> rounds = roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId);
-        for (Round round : rounds) {
-            if (round == null || round.getId() == null) {
-                continue;
-            }
-            if (Boolean.TRUE.equals(round.getFinalized()) && !Boolean.TRUE.equals(trip.getCorrectionMode())) {
-                continue;
-            }
-            Scorecard scorecard = scorecardRepository.findByRound_IdAndPlayer_Id(round.getId(), playerId).orElse(null);
-            if (scorecard == null) {
-                continue;
-            }
-            scorecard.setParticipationStatus(nextStatus);
-            scorecard.setWithdrawalHoleNumber(null);
-            if (nextStatus != ScorecardParticipationStatus.ACTIVE) {
-                scorecard.setTeam(null);
-            }
-            scorecardRepository.save(scorecard);
-        }
-
+        tripParticipationService.updateParticipation(tripId, playerId, participationStatusText);
         return getTripPlayers(tripId);
-    }
-
-    private ScorecardParticipationStatus parseParticipationStatus(String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return ScorecardParticipationStatus.ACTIVE;
-        }
-        try {
-            return ScorecardParticipationStatus.valueOf(value.trim().toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Unsupported participation status: " + value);
-        }
-    }
-
-    private long countUnavailableRounds(Long tripId, Long playerId) {
-        List<Round> rounds = roundRepository.findByTrip_IdOrderByRoundNumberAsc(tripId);
-        long count = 0L;
-        for (Round round : rounds) {
-            if (round == null || round.getId() == null) {
-                continue;
-            }
-            Scorecard scorecard = scorecardRepository.findByRound_IdAndPlayer_Id(round.getId(), playerId).orElse(null);
-            if (scorecard == null || scorecard.getParticipationStatus() == null) {
-                continue;
-            }
-            if (scorecard.getParticipationStatus() != ScorecardParticipationStatus.ACTIVE) {
-                count++;
-            }
-        }
-        return count;
     }
 
 
