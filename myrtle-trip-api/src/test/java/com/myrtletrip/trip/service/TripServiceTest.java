@@ -22,7 +22,6 @@ import com.myrtletrip.course.repository.CourseTeeComboHoleRepository;
 import com.myrtletrip.course.repository.CourseTeeRepository;
 import com.myrtletrip.event.repository.RoundEventRepository;
 import com.myrtletrip.handicap.service.TripHandicapService;
-import com.myrtletrip.handicap.source.frozen.FrozenGhinImportService;
 import com.myrtletrip.player.repository.PlayerRepository;
 import com.myrtletrip.prize.repository.PrizeScheduleRepository;
 import com.myrtletrip.prize.repository.PrizeWinningRepository;
@@ -70,7 +69,6 @@ class TripServiceTest {
     @Mock private CourseTeeComboHoleRepository courseTeeComboHoleRepository;
     @Mock private TripHandicapService tripHandicapService;
     @Mock private ScoreHistoryEntryRepository scoreHistoryEntryRepository;
-    @Mock private FrozenGhinImportService frozenGhinImportService;
     @Mock private PrizeWinningRepository prizeWinningRepository;
     @Mock private PrizeScheduleRepository prizeScheduleRepository;
     @Mock private TripPlayerPayoutStatusRepository tripPlayerPayoutStatusRepository;
@@ -80,6 +78,7 @@ class TripServiceTest {
     @Mock private RoundEventCapabilityService roundEventCapabilityService;
     @Mock private TripParticipationService tripParticipationService;
     @Mock private TripLifecycleService tripLifecycleService;
+    @Mock private TripGhinInitializationService tripGhinInitializationService;
 
     @InjectMocks
     private TripService tripService;
@@ -139,31 +138,10 @@ class TripServiceTest {
     }
 
     @Test
-    void initializeTripGhin_rejectsTripThatHasAlreadyStarted() {
-        Trip trip = trip("MYR26");
-        trip.setStatus(TripStatus.IN_PROGRESS);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+    void initializeTripGhin_delegatesToGhinInitializationService() throws Exception {
+        tripService.initializeTripGhin(10L);
 
-        IllegalStateException error = assertThrows(
-                IllegalStateException.class,
-                () -> tripService.initializeTripGhin(10L));
-
-        assertTrue(error.getMessage().contains("cannot be loaded after the trip has started"));
-    }
-
-    @Test
-    void initializeTripGhin_requiresPlayersBeforeImport() {
-        Trip trip = trip("MYR26");
-        trip.setStatus(TripStatus.PLANNING);
-        trip.setInitialized(Boolean.FALSE);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-        when(tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip)).thenReturn(Collections.emptyList());
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> tripService.initializeTripGhin(10L));
-
-        assertTrue(error.getMessage().contains("must have players"));
+        verify(tripGhinInitializationService).initializeTripGhin(10L);
     }
 
 

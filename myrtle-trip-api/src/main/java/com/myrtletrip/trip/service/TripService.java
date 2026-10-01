@@ -12,7 +12,6 @@ import com.myrtletrip.event.entity.RoundEvent;
 import com.myrtletrip.event.model.RoundEventType;
 import com.myrtletrip.event.repository.RoundEventRepository;
 import com.myrtletrip.handicap.service.TripHandicapService;
-import com.myrtletrip.handicap.source.frozen.FrozenGhinImportService;
 import com.myrtletrip.player.entity.Player;
 import com.myrtletrip.player.repository.PlayerRepository;
 import com.myrtletrip.round.entity.Round;
@@ -91,10 +90,10 @@ public class TripService {
     private final CourseTeeComboHoleRepository courseTeeComboHoleRepository;
     private final TripHandicapService tripHandicapService;
     private final ScoreHistoryEntryRepository scoreHistoryEntryRepository;
-    private final FrozenGhinImportService frozenGhinImportService;
     private final RoundEventCapabilityService roundEventCapabilityService;
     private final TripParticipationService tripParticipationService;
     private final TripLifecycleService tripLifecycleService;
+    private final TripGhinInitializationService tripGhinInitializationService;
 
     public TripService(TripRepository tripRepository,
                        TripPlayerRepository tripPlayerRepository,
@@ -113,10 +112,10 @@ public class TripService {
                        CourseTeeComboHoleRepository courseTeeComboHoleRepository,
                        TripHandicapService tripHandicapService,
                        ScoreHistoryEntryRepository scoreHistoryEntryRepository,
-                       FrozenGhinImportService frozenGhinImportService,
                        RoundEventCapabilityService roundEventCapabilityService,
                        TripParticipationService tripParticipationService,
-                       TripLifecycleService tripLifecycleService) {
+                       TripLifecycleService tripLifecycleService,
+                       TripGhinInitializationService tripGhinInitializationService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.playerRepository = playerRepository;
@@ -134,10 +133,10 @@ public class TripService {
         this.courseTeeComboHoleRepository = courseTeeComboHoleRepository;
         this.tripHandicapService = tripHandicapService;
         this.scoreHistoryEntryRepository = scoreHistoryEntryRepository;
-        this.frozenGhinImportService = frozenGhinImportService;
         this.roundEventCapabilityService = roundEventCapabilityService;
         this.tripParticipationService = tripParticipationService;
         this.tripLifecycleService = tripLifecycleService;
+        this.tripGhinInitializationService = tripGhinInitializationService;
     }
 
     @Transactional
@@ -391,56 +390,9 @@ public class TripService {
 
     @Transactional
     public void initializeTripGhin(Long tripId) throws Exception {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-
-        if (TripStatus.IN_PROGRESS.equals(trip.getStatus())
-                || TripStatus.COMPLETE.equals(trip.getStatus())
-                || Boolean.TRUE.equals(trip.getInitialized())) {
-            throw new IllegalStateException("GHIN baseline cannot be loaded after the trip has started.");
-        }
-        
-        if (trip.getTripCode() == null || trip.getTripCode().isBlank()) {
-            throw new IllegalArgumentException("Trip code is required before loading GHIN baseline.");
-        }
-
-        List<TripPlayer> tripPlayers = tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip);
-        if (tripPlayers.isEmpty()) {
-            throw new IllegalArgumentException("Trip must have players before loading GHIN baseline.");
-        }
-
-        List<Player> ghinPlayers = new ArrayList<Player>();
-
-        for (TripPlayer tripPlayer : tripPlayers) {
-            if (tripPlayer == null || tripPlayer.getPlayer() == null) {
-                continue;
-            }
-
-            Player player = tripPlayer.getPlayer();
-            if (!player.isActive()) {
-                continue;
-            }
-
-            boolean hasGhinMethod = "GHIN".equalsIgnoreCase(player.getHandicapMethod());
-            boolean hasGhinNumber = player.getGhinNumber() != null && !player.getGhinNumber().isBlank();
-
-            if (!hasGhinMethod && !hasGhinNumber) {
-                continue;
-            }
-
-            if (hasGhinNumber && !hasGhinMethod) {
-                player.setHandicapMethod("GHIN");
-            }
-
-            ghinPlayers.add(player);
-        }
-
-        if (ghinPlayers.isEmpty()) {
-            throw new IllegalArgumentException("No active GHIN players were found on this trip.");
-        }
-
-        frozenGhinImportService.initializeFrozenGhinForPlayers(ghinPlayers, trip.getTripCode());
+        tripGhinInitializationService.initializeTripGhin(tripId);
     }
+
     @Transactional(readOnly = true)
     public List<TripPlannedRoundResponse> getPlannedRounds(Long tripId) {
         Trip trip = tripRepository.findById(tripId)
