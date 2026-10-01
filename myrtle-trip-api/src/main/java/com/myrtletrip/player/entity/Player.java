@@ -63,10 +63,33 @@ public class Player {
     private String normalizedEmail;
 
     @PrePersist
+    public void beforeInsert() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        normalizeFields();
+    }
+
     @PreUpdate
-    public void normalizeFields() {
-        this.normalizedName = normalize(firstName + " " + lastName);
+    public void beforeUpdate() {
+        normalizeFields();
+    }
+
+    private void normalizeFields() {
+        this.normalizedName = normalize(buildNameForNormalization());
         this.normalizedEmail = normalizeEmail(email);
+    }
+
+    private String buildNameForNormalization() {
+        String first = firstName == null ? "" : firstName;
+        String last = lastName == null ? "" : lastName;
+        String combined = (first + " " + last).trim();
+
+        if (!combined.isEmpty()) {
+            return combined;
+        }
+
+        return displayName;
     }
 
     private String normalizeEmail(String value) {

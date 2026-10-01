@@ -1,8 +1,11 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/myrtle_trip
-    username: myrtle_app
-    password: 1146Highland
+    url: ${MYRTLE_DB_URL:jdbc:postgresql://localhost:5432/myrtle_trip}
+    username: ${MYRTLE_DB_USERNAME:myrtle_app}
+    # Transitional default preserves the current local-development behavior.
+    # Set MYRTLE_DB_PASSWORD to override it; a later pass will remove the
+    # committed default after local configuration has been externalized.
+    password: ${MYRTLE_DB_PASSWORD:1146Highland}
 
   jpa:
     hibernate:
@@ -13,7 +16,16 @@ spring:
         format_sql: true
 
   flyway:
-    enabled: false
+    # Flyway is now the schema source of truth. Existing non-empty databases
+    # without a Flyway history table are baselined at version 1; fresh databases
+    # execute V001__baseline.sql.
+    enabled: ${MYRTLE_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 1
+    baseline-description: Existing Golf Event Manager schema
+    clean-disabled: true
+    validate-on-migrate: true
 
 server:
   port: 8080

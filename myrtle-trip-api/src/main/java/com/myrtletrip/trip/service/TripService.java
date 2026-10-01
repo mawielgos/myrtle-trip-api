@@ -78,6 +78,7 @@ public class TripService {
     private static final String TRIP_ROUND = "TRIP_ROUND";
     private static final int DEFAULT_PLANNED_ROUND_COUNT = 5;
     private static final int MIN_PLANNED_ROUND_COUNT = 1;
+    private static final int MAX_PLANNED_ROUND_COUNT = 12;
     private static final TripHandicapMethod DEFAULT_HANDICAP_METHOD = TripHandicapMethod.GHIN_PLUS_DB_SCORE_HISTORY;
 
     private final TripRepository tripRepository;
@@ -618,6 +619,9 @@ public class TripService {
 
         List<TripPlannedRoundRequest> sequencedRequests = sortPlannedRoundRequestsByPlaySequence(request.getRounds());
 
+        trip.setPlannedRoundCount(sequencedRequests.size());
+        tripRepository.save(trip);
+
         tripPlannedRoundEventRepository.deleteByPlannedRound_Trip_Id(trip.getId());
         tripPlannedRoundRepository.deleteByTrip(trip);
         tripPlannedRoundRepository.flush();
@@ -1074,8 +1078,8 @@ public class TripService {
 
     private void validateTripDatesAndRoundCount(TripSetupRequest request) {
         int plannedRoundCount = resolvePlannedRoundCount(request.getPlannedRoundCount());
-        if (plannedRoundCount < 1 || plannedRoundCount > 12) {
-            throw new IllegalArgumentException("Planned round count must be between 1 and 12.");
+        if (plannedRoundCount < MIN_PLANNED_ROUND_COUNT || plannedRoundCount > MAX_PLANNED_ROUND_COUNT) {
+            throw new IllegalArgumentException("Planned round count must be between " + MIN_PLANNED_ROUND_COUNT + " and " + MAX_PLANNED_ROUND_COUNT + ".");
         }
 
         if (request.getTripStartDate() == null) {
@@ -1317,10 +1321,9 @@ public class TripService {
 
     private void validatePlannedRounds(List<TripPlannedRoundRequest> rounds, Trip trip) {
         Set<Integer> usedRoundNumbers = new HashSet<Integer>();
-        int expectedRoundCount = resolvePlannedRoundCount(trip.getPlannedRoundCount());
 
-        if (rounds.size() != expectedRoundCount) {
-            throw new IllegalArgumentException("Trip is configured for " + expectedRoundCount + " planned rounds. Update the trip round count before adding or removing round rows.");
+        if (rounds.size() < MIN_PLANNED_ROUND_COUNT || rounds.size() > MAX_PLANNED_ROUND_COUNT) {
+            throw new IllegalArgumentException("Planned round count must be between " + MIN_PLANNED_ROUND_COUNT + " and " + MAX_PLANNED_ROUND_COUNT + ".");
         }
 
         for (TripPlannedRoundRequest round : rounds) {
@@ -1333,8 +1336,8 @@ public class TripService {
             if (round.getRoundNumber() < 1) {
                 throw new IllegalArgumentException("roundNumber must be >= 1.");
             }
-            if (round.getRoundNumber() > expectedRoundCount) {
-                throw new IllegalArgumentException("roundNumber must be <= the trip planned round count.");
+            if (round.getRoundNumber() > MAX_PLANNED_ROUND_COUNT) {
+                throw new IllegalArgumentException("roundNumber must be <= " + MAX_PLANNED_ROUND_COUNT + ".");
             }
             if (!usedRoundNumbers.add(round.getRoundNumber())) {
                 throw new IllegalArgumentException("Duplicate planned round number: " + round.getRoundNumber());
