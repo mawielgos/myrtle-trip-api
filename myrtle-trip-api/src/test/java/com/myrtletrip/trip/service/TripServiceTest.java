@@ -42,6 +42,7 @@ import com.myrtletrip.tournament.repository.TripTournamentRoundRepository;
 import com.myrtletrip.trip.dto.SaveTripPlannedRoundsRequest;
 import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
 import com.myrtletrip.trip.dto.TripReadinessResponse;
+import com.myrtletrip.trip.dto.TripRoundListResponse;
 import com.myrtletrip.trip.dto.TripSetupRequest;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripStatus;
@@ -86,6 +87,7 @@ class TripServiceTest {
     @Mock private TripPlannedRoundService tripPlannedRoundService;
     @Mock private TripSetupService tripSetupService;
     @Mock private TripReadinessService tripReadinessService;
+    @Mock private TripRoundListService tripRoundListService;
 
     @InjectMocks
     private TripService tripService;
@@ -179,6 +181,18 @@ class TripServiceTest {
 
         assertTrue(result == expected);
         verify(tripPlannedRoundService).savePlannedRounds(10L, request);
+    }
+
+
+    @Test
+    void getTripRounds_delegatesToRoundListService() {
+        List<TripRoundListResponse> expected = Collections.emptyList();
+        when(tripRoundListService.getTripRounds(10L)).thenReturn(expected);
+
+        List<TripRoundListResponse> result = tripService.getTripRounds(10L);
+
+        assertTrue(result == expected);
+        verify(tripRoundListService).getTripRounds(10L);
     }
 
     @Test
