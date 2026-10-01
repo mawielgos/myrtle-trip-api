@@ -14,9 +14,6 @@ import com.myrtletrip.event.repository.RoundEventRepository;
 import com.myrtletrip.handicap.service.TripHandicapService;
 import com.myrtletrip.handicap.source.frozen.FrozenGhinImportService;
 import com.myrtletrip.player.entity.Player;
-import com.myrtletrip.prize.repository.PrizeScheduleRepository;
-import com.myrtletrip.prize.repository.PrizeWinningRepository;
-import com.myrtletrip.prize.repository.TripPlayerPayoutStatusRepository;
 import com.myrtletrip.player.repository.PlayerRepository;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundGroup;
@@ -47,10 +44,7 @@ import com.myrtletrip.trip.entity.TripPlannedRound;
 import com.myrtletrip.trip.entity.TripPlannedRoundEvent;
 import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.trip.entity.TripStatus;
-import com.myrtletrip.tournament.repository.TripTournamentRepository;
-import com.myrtletrip.tournament.repository.TripTournamentRoundRepository;
 import com.myrtletrip.trip.model.TripHandicapMethod;
-import com.myrtletrip.trip.repository.TripBillInventoryRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
 import com.myrtletrip.trip.repository.TripPlayerRepository;
@@ -61,7 +55,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -99,14 +92,9 @@ public class TripService {
     private final TripHandicapService tripHandicapService;
     private final ScoreHistoryEntryRepository scoreHistoryEntryRepository;
     private final FrozenGhinImportService frozenGhinImportService;
-    private final PrizeWinningRepository prizeWinningRepository;
-    private final PrizeScheduleRepository prizeScheduleRepository;
-    private final TripPlayerPayoutStatusRepository tripPlayerPayoutStatusRepository;
-    private final TripBillInventoryRepository tripBillInventoryRepository;
-    private final TripTournamentRepository tripTournamentRepository;
-    private final TripTournamentRoundRepository tripTournamentRoundRepository;
     private final RoundEventCapabilityService roundEventCapabilityService;
     private final TripParticipationService tripParticipationService;
+    private final TripLifecycleService tripLifecycleService;
 
     public TripService(TripRepository tripRepository,
                        TripPlayerRepository tripPlayerRepository,
@@ -126,14 +114,9 @@ public class TripService {
                        TripHandicapService tripHandicapService,
                        ScoreHistoryEntryRepository scoreHistoryEntryRepository,
                        FrozenGhinImportService frozenGhinImportService,
-                       PrizeWinningRepository prizeWinningRepository,
-                       PrizeScheduleRepository prizeScheduleRepository,
-                       TripPlayerPayoutStatusRepository tripPlayerPayoutStatusRepository,
-                       TripBillInventoryRepository tripBillInventoryRepository,
-                       TripTournamentRepository tripTournamentRepository,
-                       TripTournamentRoundRepository tripTournamentRoundRepository,
                        RoundEventCapabilityService roundEventCapabilityService,
-                       TripParticipationService tripParticipationService) {
+                       TripParticipationService tripParticipationService,
+                       TripLifecycleService tripLifecycleService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.playerRepository = playerRepository;
@@ -152,14 +135,9 @@ public class TripService {
         this.tripHandicapService = tripHandicapService;
         this.scoreHistoryEntryRepository = scoreHistoryEntryRepository;
         this.frozenGhinImportService = frozenGhinImportService;
-        this.prizeWinningRepository = prizeWinningRepository;
-        this.prizeScheduleRepository = prizeScheduleRepository;
-        this.tripPlayerPayoutStatusRepository = tripPlayerPayoutStatusRepository;
-        this.tripBillInventoryRepository = tripBillInventoryRepository;
-        this.tripTournamentRepository = tripTournamentRepository;
-        this.tripTournamentRoundRepository = tripTournamentRoundRepository;
         this.roundEventCapabilityService = roundEventCapabilityService;
         this.tripParticipationService = tripParticipationService;
+        this.tripLifecycleService = tripLifecycleService;
     }
 
     @Transactional
@@ -398,88 +376,17 @@ public class TripService {
 
     @Transactional
     public void archiveTrip(Long tripId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-
-        if (Boolean.TRUE.equals(trip.getArchived())) {
-            return;
-        }
-
-        trip.setArchived(Boolean.TRUE);
-        trip.setArchivedAt(LocalDateTime.now());
-        tripRepository.save(trip);
+        tripLifecycleService.archiveTrip(tripId);
     }
 
     @Transactional
     public void restoreTrip(Long tripId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-
-        if (!Boolean.TRUE.equals(trip.getArchived())) {
-            return;
-        }
-
-        trip.setArchived(Boolean.FALSE);
-        trip.setArchivedAt(null);
-        tripRepository.save(trip);
+        tripLifecycleService.restoreTrip(tripId);
     }
 
     @Transactional
     public void deleteTrip(Long tripId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-
-        long startedRoundCount = roundRepository.countByTrip_Id(tripId);
-        if (startedRoundCount > 0L) {
-            throw new IllegalStateException("Only trips with no started rounds can be deleted.");
-        }
-
-        List<TripPlayer> tripPlayers = tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip);
-        String handicapGroupCode = trip.getTripCode();
-
-        if (handicapGroupCode != null && !handicapGroupCode.isBlank()) {
-            for (TripPlayer tripPlayer : tripPlayers) {
-                if (tripPlayer == null || tripPlayer.getPlayer() == null) {
-                    continue;
-                }
-
-                scoreHistoryEntryRepository.deleteByPlayerAndHandicapGroupCodeAndSourceType(
-                        tripPlayer.getPlayer(),
-                        handicapGroupCode,
-                        GHIN_FROZEN
-                );
-            }
-        }
-
-        // Delete trip-owned configuration/data before deleting the Trip row.
-        // These rows can exist even before a trip has started, so they are valid
-        // for a safe-delete trip but still hold FK references to trip.id.
-        prizeWinningRepository.deleteByTrip_Id(tripId);
-        tripPlayerPayoutStatusRepository.deleteByTrip_Id(tripId);
-        tripBillInventoryRepository.deleteByTripId(tripId);
-
-        tripTournamentRepository.findByTrip_Id(tripId).ifPresent(tournament -> {
-            tripTournamentRoundRepository.deleteByTournament_Id(tournament.getId());
-            tripTournamentRepository.delete(tournament);
-        });
-
-        prizeScheduleRepository.deleteAll(prizeScheduleRepository.findByTrip_IdOrderByIdAsc(tripId));
-        prizeScheduleRepository.flush();
-
-        List<TripPlannedRound> plannedRounds = tripPlannedRoundRepository.findByTripOrderByRoundNumberAsc(trip);
-
-        if (!plannedRounds.isEmpty()) {
-            tripPlannedRoundRepository.deleteAll(plannedRounds);
-            tripPlannedRoundRepository.flush();
-        }
-
-        if (!tripPlayers.isEmpty()) {
-            tripPlayerRepository.deleteAll(tripPlayers);
-            tripPlayerRepository.flush();
-        }
-
-        tripRepository.delete(trip);
-        tripRepository.flush();
+        tripLifecycleService.deleteTrip(tripId);
     }
 
     @Transactional

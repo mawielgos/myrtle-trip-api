@@ -1,11 +1,7 @@
 package com.myrtletrip.trip.service;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -83,6 +79,7 @@ class TripServiceTest {
     @Mock private TripTournamentRoundRepository tripTournamentRoundRepository;
     @Mock private RoundEventCapabilityService roundEventCapabilityService;
     @Mock private TripParticipationService tripParticipationService;
+    @Mock private TripLifecycleService tripLifecycleService;
 
     @InjectMocks
     private TripService tripService;
@@ -124,54 +121,21 @@ class TripServiceTest {
     }
 
     @Test
-    void archiveTrip_marksTripArchivedAndPersistsIt() {
-        Trip trip = trip("MYR26");
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-
+    void archiveTrip_delegatesToLifecycleService() {
         tripService.archiveTrip(10L);
-
-        assertTrue(Boolean.TRUE.equals(trip.getArchived()));
-        assertNotNull(trip.getArchivedAt());
-        verify(tripRepository).save(trip);
+        verify(tripLifecycleService).archiveTrip(10L);
     }
 
     @Test
-    void archiveTrip_isNoOpWhenAlreadyArchived() {
-        Trip trip = trip("MYR26");
-        trip.setArchived(Boolean.TRUE);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-
-        tripService.archiveTrip(10L);
-
-        verify(tripRepository, never()).save(trip);
-    }
-
-    @Test
-    void restoreTrip_clearsArchivedStateAndPersistsIt() {
-        Trip trip = trip("MYR26");
-        trip.setArchived(Boolean.TRUE);
-        trip.setArchivedAt(java.time.LocalDateTime.now());
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-
+    void restoreTrip_delegatesToLifecycleService() {
         tripService.restoreTrip(10L);
-
-        assertFalse(Boolean.TRUE.equals(trip.getArchived()));
-        assertNull(trip.getArchivedAt());
-        verify(tripRepository).save(trip);
+        verify(tripLifecycleService).restoreTrip(10L);
     }
 
     @Test
-    void deleteTrip_rejectsTripAfterAnyRoundHasStarted() {
-        Trip trip = trip("MYR26");
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-        when(roundRepository.countByTrip_Id(10L)).thenReturn(1L);
-
-        IllegalStateException error = assertThrows(
-                IllegalStateException.class,
-                () -> tripService.deleteTrip(10L));
-
-        assertTrue(error.getMessage().contains("no started rounds"));
-        verify(tripRepository, never()).delete(trip);
+    void deleteTrip_delegatesToLifecycleService() {
+        tripService.deleteTrip(10L);
+        verify(tripLifecycleService).deleteTrip(10L);
     }
 
     @Test
