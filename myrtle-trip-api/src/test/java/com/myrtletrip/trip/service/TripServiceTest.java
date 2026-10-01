@@ -83,44 +83,21 @@ class TripServiceTest {
     @Mock private TripGhinInitializationService tripGhinInitializationService;
     @Mock private TripStatusService tripStatusService;
     @Mock private TripPlannedRoundService tripPlannedRoundService;
+    @Mock private TripSetupService tripSetupService;
 
     @InjectMocks
     private TripService tripService;
 
     @Test
-    void createOrUpdateTripRoster_requiresTripCode() {
+    void createOrUpdateTripRoster_delegatesToSetupService() {
         TripSetupRequest request = validSetupRequest();
-        request.setTripCode(" ");
+        Trip expected = trip("MYR26");
+        when(tripSetupService.createOrUpdateTripRoster(request)).thenReturn(expected);
 
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> tripService.createOrUpdateTripRoster(request));
+        Trip result = tripService.createOrUpdateTripRoster(request);
 
-        assertTrue(error.getMessage().contains("tripCode is required"));
-    }
-
-    @Test
-    void createOrUpdateTripRoster_requiresName() {
-        TripSetupRequest request = validSetupRequest();
-        request.setName(null);
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> tripService.createOrUpdateTripRoster(request));
-
-        assertTrue(error.getMessage().contains("name is required"));
-    }
-
-    @Test
-    void createOrUpdateTripRoster_requiresTripYear() {
-        TripSetupRequest request = validSetupRequest();
-        request.setTripYear(null);
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> tripService.createOrUpdateTripRoster(request));
-
-        assertTrue(error.getMessage().contains("tripYear is required"));
+        assertTrue(result == expected);
+        verify(tripSetupService).createOrUpdateTripRoster(request);
     }
 
     @Test
