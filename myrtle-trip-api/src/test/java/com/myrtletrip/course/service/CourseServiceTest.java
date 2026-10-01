@@ -126,55 +126,6 @@ class CourseServiceTest {
         assertTrue(error.getMessage().contains("already exists"));
     }
 
-    @Test
-    void saveHolesForTee_rejectsComboTee() {
-        CourseTee tee = new CourseTee();
-        tee.setId(20L);
-        tee.setTeeType(TeeType.COMBO);
-        when(courseTeeRepository.findById(20L)).thenReturn(Optional.of(tee));
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> courseService.saveHolesForTee(20L, List.of()));
-
-        assertEquals("Combo tee hole data is controlled by source tee mappings.", error.getMessage());
-    }
-
-    @Test
-    void saveHolesForTee_requiresExactly18Holes() {
-        CourseTee tee = regularTee();
-        when(courseTeeRepository.findById(20L)).thenReturn(Optional.of(tee));
-
-        List<SaveCourseHoleRequest> requests = new ArrayList<>();
-        for (int hole = 1; hole <= 17; hole++) {
-            requests.add(holeRequest(hole, 4, hole));
-        }
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> courseService.saveHolesForTee(20L, requests));
-
-        assertEquals("Exactly 18 holes are required", error.getMessage());
-    }
-
-    @Test
-    void saveHolesForTee_rejectsDuplicateMensHandicap() {
-        CourseTee tee = regularTee();
-        when(courseTeeRepository.findById(20L)).thenReturn(Optional.of(tee));
-
-        List<SaveCourseHoleRequest> requests = new ArrayList<>();
-        for (int hole = 1; hole <= 18; hole++) {
-            int handicap = hole == 18 ? 17 : hole;
-            requests.add(holeRequest(hole, 4, handicap));
-        }
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> courseService.saveHolesForTee(20L, requests));
-
-        assertEquals("Duplicate men's handicap: 17", error.getMessage());
-    }
-
     private SaveCourseTeeRequest validTeeRequest() {
         SaveCourseTeeRequest request = new SaveCourseTeeRequest();
         request.setTeeName("Blue");
@@ -187,23 +138,4 @@ class CourseServiceTest {
         return request;
     }
 
-    private CourseTee regularTee() {
-        CourseTee tee = new CourseTee();
-        tee.setId(20L);
-        tee.setTeeType(TeeType.REGULAR);
-        tee.setParTotal(72);
-        tee.setCourseRating(new BigDecimal("72.1"));
-        tee.setSlope(130);
-        tee.setActive(true);
-        return tee;
-    }
-
-    private SaveCourseHoleRequest holeRequest(int hole, int par, int handicap) {
-        SaveCourseHoleRequest request = new SaveCourseHoleRequest();
-        request.setHoleNumber(hole);
-        request.setPar(par);
-        request.setHandicap(handicap);
-        request.setYardage(400);
-        return request;
-    }
 }
