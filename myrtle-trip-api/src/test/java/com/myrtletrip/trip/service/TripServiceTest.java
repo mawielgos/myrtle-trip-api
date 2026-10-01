@@ -40,6 +40,9 @@ import com.myrtletrip.scorehistory.repository.ScoreHistoryEntryRepository;
 import com.myrtletrip.tournament.repository.TripTournamentRepository;
 import com.myrtletrip.tournament.repository.TripTournamentRoundRepository;
 import com.myrtletrip.trip.dto.SaveTripPlannedRoundsRequest;
+import com.myrtletrip.trip.dto.TripDetailResponse;
+import com.myrtletrip.trip.dto.TripListResponse;
+import com.myrtletrip.trip.dto.TripPlayerResponse;
 import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
 import com.myrtletrip.trip.dto.TripReadinessResponse;
 import com.myrtletrip.trip.dto.TripRoundListResponse;
@@ -88,6 +91,7 @@ class TripServiceTest {
     @Mock private TripSetupService tripSetupService;
     @Mock private TripReadinessService tripReadinessService;
     @Mock private TripRoundListService tripRoundListService;
+    @Mock private TripReadModelService tripReadModelService;
 
     @InjectMocks
     private TripService tripService;
@@ -102,6 +106,39 @@ class TripServiceTest {
 
         assertTrue(result == expected);
         verify(tripSetupService).createOrUpdateTripRoster(request);
+    }
+
+    @Test
+    void getTrips_delegatesToReadModelService() {
+        List<TripListResponse> expected = Collections.emptyList();
+        when(tripReadModelService.getTrips(false)).thenReturn(expected);
+
+        List<TripListResponse> result = tripService.getTrips(false);
+
+        assertTrue(result == expected);
+        verify(tripReadModelService).getTrips(false);
+    }
+
+    @Test
+    void getTrip_delegatesToReadModelService() {
+        TripDetailResponse expected = new TripDetailResponse();
+        when(tripReadModelService.getTrip(10L)).thenReturn(expected);
+
+        TripDetailResponse result = tripService.getTrip(10L);
+
+        assertTrue(result == expected);
+        verify(tripReadModelService).getTrip(10L);
+    }
+
+    @Test
+    void getTripPlayers_delegatesToReadModelService() {
+        List<TripPlayerResponse> expected = Collections.emptyList();
+        when(tripReadModelService.getTripPlayers(10L)).thenReturn(expected);
+
+        List<TripPlayerResponse> result = tripService.getTripPlayers(10L);
+
+        assertTrue(result == expected);
+        verify(tripReadModelService).getTripPlayers(10L);
     }
 
     @Test
@@ -132,14 +169,15 @@ class TripServiceTest {
 
     @Test
     void updateTripPlayerParticipation_delegatesPropagationThenReturnsCurrentRoster() {
-        Trip trip = trip("MYR26");
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-        when(tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip)).thenReturn(Collections.emptyList());
+        List<TripPlayerResponse> expected = Collections.emptyList();
+        when(tripReadModelService.getTripPlayers(10L)).thenReturn(expected);
 
-        tripService.updateTripPlayerParticipation(10L, 20L, "NO_SHOW");
+        List<TripPlayerResponse> result =
+                tripService.updateTripPlayerParticipation(10L, 20L, "NO_SHOW");
 
+        assertTrue(result == expected);
         verify(tripParticipationService).updateParticipation(10L, 20L, "NO_SHOW");
-        verify(tripPlayerRepository).findByTripOrderByDisplayOrderAsc(trip);
+        verify(tripReadModelService).getTripPlayers(10L);
     }
 
     @Test
