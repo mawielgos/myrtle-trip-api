@@ -78,6 +78,7 @@ public class TripService {
     private final TripStatusService tripStatusService;
     private final TripPlannedRoundService tripPlannedRoundService;
     private final TripSetupService tripSetupService;
+    private final TripReadinessService tripReadinessService;
 
     public TripService(TripRepository tripRepository,
                        TripPlayerRepository tripPlayerRepository,
@@ -95,7 +96,8 @@ public class TripService {
                        TripGhinInitializationService tripGhinInitializationService,
                        TripStatusService tripStatusService,
                        TripPlannedRoundService tripPlannedRoundService,
-                       TripSetupService tripSetupService) {
+                       TripSetupService tripSetupService,
+                       TripReadinessService tripReadinessService) {
         this.tripRepository = tripRepository;
         this.tripPlayerRepository = tripPlayerRepository;
         this.roundRepository = roundRepository;
@@ -113,6 +115,7 @@ public class TripService {
         this.tripStatusService = tripStatusService;
         this.tripPlannedRoundService = tripPlannedRoundService;
         this.tripSetupService = tripSetupService;
+        this.tripReadinessService = tripReadinessService;
     }
 
     @Transactional
@@ -176,7 +179,7 @@ public class TripService {
         response.setArchived(Boolean.TRUE.equals(trip.getArchived()));
         response.setHasFemalePlayers(hasFemalePlayers(trip));
 
-        TripReadinessResponse readiness = buildTripReadiness(trip);
+        TripReadinessResponse readiness = tripReadinessService.getTripReadiness(trip);
         response.setUnresolvedGhinFixCount(readiness.getUnresolvedGhinFixCount());
         response.setReadiness(readiness);
 
@@ -350,29 +353,15 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public TripReadinessResponse getTripReadiness(Long tripId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-
-        return buildTripReadiness(trip);
+        return tripReadinessService.getTripReadiness(tripId);
     }
 
     @Transactional(readOnly = true)
     public void validateTripCanStart(Long tripId) {
-        TripReadinessResponse readiness = getTripReadiness(tripId);
-
-        if (Boolean.TRUE.equals(readiness.getCanStartTrip())) {
-            return;
-        }
-
-        List<String> blockingItems = readiness.getBlockingItems();
-        if (blockingItems == null || blockingItems.isEmpty()) {
-            throw new IllegalStateException("Trip is not ready to start.");
-        }
-
-        throw new IllegalStateException("Trip is not ready to start: " + String.join(" ", blockingItems));
+        tripReadinessService.validateTripCanStart(tripId);
     }
- 
-    
+
+
     private CurrentRoundResponse toCurrentRoundResponse(Round round) {
         if (round == null) {
             return null;
@@ -490,149 +479,6 @@ public class TripService {
                         player,
                         TRIP_ROUND
                 );
-    }
-
-    private TripReadinessResponse buildTripReadiness(Trip trip) {
-        List<TripPlayer> tripPlayers = tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip);
-        List<TripPlannedRound> plannedRounds = tripPlannedRoundService.loadActivePlannedRounds(trip);
-
-        int activePlayerCount = 0;
-        for (TripPlayer tripPlayer : tripPlayers) {
-            if (tripPlayer != null
-                    && tripPlayer.getPlayer() != null
-                    && tripPlayer.getPlayer().isActive()) {
-                activePlayerCount++;
-            }
-        }
-
-        int completedPlannedRoundCount = 0;
-        for (TripPlannedRound plannedRound : plannedRounds) {
-            if (isPlannedRoundComplete(plannedRound)) {
-                completedPlannedRoundCount++;
-            }
-        }
-
-        boolean handicapsEnabled = trip.getHandicapsEnabled() == null || Boolean.TRUE.equals(trip.getHandicapsEnabled());
-
-        long unresolvedGhinFixCount = 0L;
-        if (handicapsEnabled
-                && !TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())
-                && trip.getTripCode() != null && !trip.getTripCode().isBlank()) {
-            unresolvedGhinFixCount =
-                    scoreHistoryEntryRepository
-                            .countByHandicapGroupCodeAndSourceTypeAndManualDifferentialRequiredTrue(
-                                    trip.getTripCode(),
-                                    GHIN_FROZEN
-                            );
-        }
-
-        boolean handicapIndexesReady = true;
-        if (handicapsEnabled) {
-            for (TripPlayer tripPlayer : tripPlayers) {
-                if (tripPlayer == null
-                        || tripPlayer.getPlayer() == null
-                        || !tripPlayer.getPlayer().isActive()) {
-                    continue;
-                }
-
-                if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
-                    if (tripPlayer.getFrozenHandicapIndex() == null) {
-                        handicapIndexesReady = false;
-                    }
-                } else {
-                    try {
-                        BigDecimal calculatedIndex = tripHandicapService.calculateTripIndex(
-                                tripPlayer.getPlayer(),
-                                trip.getTripCode(),
-                                resolveEffectiveHandicapMethod(trip)
-                        );
-                        if (calculatedIndex == null) {
-                            handicapIndexesReady = false;
-                        }
-                    } catch (Exception ex) {
-                        handicapIndexesReady = false;
-                    }
-                }
-            }
-        }
-
-        boolean rosterReady = activePlayerCount > 0;
-        boolean plannedRoundsReady =
-                plannedRounds.size() >= MIN_PLANNED_ROUND_COUNT
-                        && completedPlannedRoundCount == plannedRounds.size();
-        boolean ghinFixesReady = unresolvedGhinFixCount == 0L;
-
-        boolean alreadyStarted =
-                Boolean.TRUE.equals(trip.getInitialized())
-                        || TripStatus.IN_PROGRESS.equals(trip.getStatus())
-                        || TripStatus.COMPLETE.equals(trip.getStatus());
-
-        boolean canStartTrip =
-                !alreadyStarted
-                        && rosterReady
-                        && plannedRoundsReady
-                        && ghinFixesReady
-                        && handicapIndexesReady;
-
-        List<String> blockingItems = new ArrayList<String>();
-
-        if (alreadyStarted) {
-            blockingItems.add("Trip has already been started.");
-        }
-
-        if (!rosterReady) {
-            blockingItems.add("Add at least one active player to the trip roster.");
-        }
-
-        if (plannedRounds.size() < MIN_PLANNED_ROUND_COUNT) {
-            blockingItems.add("Trip must have at least one planned round.");
-        } else if (completedPlannedRoundCount != plannedRounds.size()) {
-            blockingItems.add("All planned rounds must have a date, format, course, and standard tee. Alternate tee is optional but must differ from the standard tee.");
-        }
-
-        if (!handicapIndexesReady) {
-            if (TripHandicapMethod.FROZEN_GHIN_INDEX.equals(trip.getHandicapMethod())) {
-                blockingItems.add("Enter a frozen GHIN handicap index for every active player before starting the trip, or mark the trip as Scratch / no handicaps.");
-            } else {
-                blockingItems.add("Every active player must have a calculable handicap index before starting the trip, or mark the trip as Scratch / no handicaps.");
-            }
-        }
-
-        if (!ghinFixesReady) {
-            blockingItems.add("Resolve all GHIN manual differential fixes before starting the trip.");
-        }
-
-        TripReadinessResponse response = new TripReadinessResponse();
-        response.setActivePlayerCount(activePlayerCount);
-        response.setPlannedRoundCount(plannedRounds.size());
-        response.setCompletedPlannedRoundCount(completedPlannedRoundCount);
-        response.setUnresolvedGhinFixCount(unresolvedGhinFixCount);
-        response.setRosterReady(rosterReady);
-        response.setPlannedRoundsReady(plannedRoundsReady);
-        response.setGhinFixesReady(ghinFixesReady);
-        response.setHandicapIndexesReady(handicapIndexesReady);
-        response.setCanStartTrip(canStartTrip);
-        response.setBlockingItems(blockingItems);
-
-        return response;
-    }
-    private boolean isPlannedRoundComplete(TripPlannedRound plannedRound) {
-        if (plannedRound == null) {
-            return false;
-        }
-        if (plannedRound.getRoundDate() == null) {
-            return false;
-        }
-        if (!tripPlannedRoundService.hasPlannedRoundEventConfiguration(plannedRound)) {
-            return false;
-        }
-        if (plannedRound.getCourseId() == null) {
-            return false;
-        }
-        if (plannedRound.getStandardTeeId() == null) {
-            return false;
-        }
-        return true;
     }
 
     private boolean hasFemalePlayers(Trip trip) {

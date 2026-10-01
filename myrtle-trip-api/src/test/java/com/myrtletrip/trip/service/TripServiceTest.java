@@ -41,6 +41,7 @@ import com.myrtletrip.tournament.repository.TripTournamentRepository;
 import com.myrtletrip.tournament.repository.TripTournamentRoundRepository;
 import com.myrtletrip.trip.dto.SaveTripPlannedRoundsRequest;
 import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
+import com.myrtletrip.trip.dto.TripReadinessResponse;
 import com.myrtletrip.trip.dto.TripSetupRequest;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripStatus;
@@ -84,6 +85,7 @@ class TripServiceTest {
     @Mock private TripStatusService tripStatusService;
     @Mock private TripPlannedRoundService tripPlannedRoundService;
     @Mock private TripSetupService tripSetupService;
+    @Mock private TripReadinessService tripReadinessService;
 
     @InjectMocks
     private TripService tripService;
@@ -177,6 +179,24 @@ class TripServiceTest {
 
         assertTrue(result == expected);
         verify(tripPlannedRoundService).savePlannedRounds(10L, request);
+    }
+
+    @Test
+    void getTripReadiness_delegatesToReadinessService() {
+        TripReadinessResponse expected = new TripReadinessResponse();
+        when(tripReadinessService.getTripReadiness(10L)).thenReturn(expected);
+
+        TripReadinessResponse result = tripService.getTripReadiness(10L);
+
+        assertTrue(result == expected);
+        verify(tripReadinessService).getTripReadiness(10L);
+    }
+
+    @Test
+    void validateTripCanStart_delegatesToReadinessService() {
+        tripService.validateTripCanStart(10L);
+
+        verify(tripReadinessService).validateTripCanStart(10L);
     }
 
     private TripSetupRequest validSetupRequest() {
