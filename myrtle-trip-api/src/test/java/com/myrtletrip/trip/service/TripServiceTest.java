@@ -6,10 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -29,11 +31,15 @@ import com.myrtletrip.player.repository.PlayerRepository;
 import com.myrtletrip.prize.repository.PrizeScheduleRepository;
 import com.myrtletrip.prize.repository.PrizeWinningRepository;
 import com.myrtletrip.prize.repository.TripPlayerPayoutStatusRepository;
+import com.myrtletrip.round.entity.Round;
+import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.repository.RoundGroupRepository;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.round.service.RoundEventCapabilityService;
 import com.myrtletrip.round.service.RoundTeamAutoAssignmentService;
+import com.myrtletrip.scoreentry.entity.Scorecard;
+import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scorehistory.repository.ScoreHistoryEntryRepository;
 import com.myrtletrip.tournament.repository.TripTournamentRepository;
@@ -41,6 +47,7 @@ import com.myrtletrip.tournament.repository.TripTournamentRoundRepository;
 import com.myrtletrip.trip.dto.TripSetupRequest;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripStatus;
+import com.myrtletrip.trip.entity.TripPlayer;
 import com.myrtletrip.trip.repository.TripBillInventoryRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
@@ -194,6 +201,112 @@ class TripServiceTest {
         assertTrue(error.getMessage().contains("must have players"));
     }
 
+
+    @Test
+    void updateTripPlayerParticipation_noShowClearsTeamAndWithdrawalAcrossEditableRounds() {
+        Trip trip = trip("MYR26");
+        TripPlayer tripPlayer = tripPlayer(trip, 20L);
+        Round round = round(101L, false);
+        Scorecard scorecard = new Scorecard();
+        scorecard.setParticipationStatus(ScorecardParticipationStatus.ACTIVE);
+        scorecard.setWithdrawalHoleNumber(9);
+        scorecard.setTeam(new RoundTeam());
+
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripPlayerRepository.findByTrip_IdAndPlayer_Id(10L, 20L)).thenReturn(Optional.of(tripPlayer));
+        when(roundRepository.findByTrip_IdOrderByRoundNumberAsc(10L)).thenReturn(List.of(round));
+        when(scorecardRepository.findByRound_IdAndPlayer_Id(101L, 20L)).thenReturn(Optional.of(scorecard));
+        when(tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip)).thenReturn(Collections.emptyList());
+
+        tripService.updateTripPlayerParticipation(10L, 20L, "NO_SHOW");
+
+        assertTrue(tripPlayer.getParticipationStatus() == ScorecardParticipationStatus.NO_SHOW);
+        assertTrue(scorecard.getParticipationStatus() == ScorecardParticipationStatus.NO_SHOW);
+        assertNull(scorecard.getWithdrawalHoleNumber());
+        assertNull(scorecard.getTeam());
+        verify(scorecardRepository).save(scorecard);
+    }
+
+    @Test
+    void updateTripPlayerParticipation_skipsFinalizedRoundOutsideCorrectionMode() {
+        Trip trip = trip("MYR26");
+        trip.setCorrectionMode(Boolean.FALSE);
+        TripPlayer tripPlayer = tripPlayer(trip, 20L);
+        Round round = round(101L, true);
+
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripPlayerRepository.findByTrip_IdAndPlayer_Id(10L, 20L)).thenReturn(Optional.of(tripPlayer));
+        when(roundRepository.findByTrip_IdOrderByRoundNumberAsc(10L)).thenReturn(List.of(round));
+        when(tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip)).thenReturn(Collections.emptyList());
+
+        tripService.updateTripPlayerParticipation(10L, 20L, "WITHDRAWN");
+
+        verify(scorecardRepository, never()).findByRound_IdAndPlayer_Id(101L, 20L);
+    }
+
+    @Test
+    void updateTripPlayerParticipation_updatesFinalizedRoundInCorrectionMode() {
+        Trip trip = trip("MYR26");
+        trip.setCorrectionMode(Boolean.TRUE);
+        TripPlayer tripPlayer = tripPlayer(trip, 20L);
+        Round round = round(101L, true);
+        Scorecard scorecard = new Scorecard();
+        scorecard.setTeam(new RoundTeam());
+
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripPlayerRepository.findByTrip_IdAndPlayer_Id(10L, 20L)).thenReturn(Optional.of(tripPlayer));
+        when(roundRepository.findByTrip_IdOrderByRoundNumberAsc(10L)).thenReturn(List.of(round));
+        when(scorecardRepository.findByRound_IdAndPlayer_Id(101L, 20L)).thenReturn(Optional.of(scorecard));
+        when(tripPlayerRepository.findByTripOrderByDisplayOrderAsc(trip)).thenReturn(Collections.emptyList());
+
+        tripService.updateTripPlayerParticipation(10L, 20L, "WITHDRAWN");
+
+        assertTrue(scorecard.getParticipationStatus() == ScorecardParticipationStatus.WITHDRAWN);
+        assertNull(scorecard.getTeam());
+        verify(scorecardRepository).save(scorecard);
+    }
+
+    @Test
+    void updateTripPlayerParticipation_rejectsUnsupportedStatusBeforeChangingRoster() {
+        Trip trip = trip("MYR26");
+        TripPlayer tripPlayer = tripPlayer(trip, 20L);
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripPlayerRepository.findByTrip_IdAndPlayer_Id(10L, 20L)).thenReturn(Optional.of(tripPlayer));
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> tripService.updateTripPlayerParticipation(10L, 20L, "MAYBE"));
+
+        assertTrue(error.getMessage().contains("Unsupported participation status"));
+        verify(tripPlayerRepository, never()).save(tripPlayer);
+    }
+
+    @Test
+    void refreshTripStatusFromRounds_initializedTripBecomesInProgress() {
+        Trip trip = trip("MYR26");
+        trip.setInitialized(Boolean.TRUE);
+        trip.setStatus(TripStatus.PLANNING);
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+
+        tripService.refreshTripStatusFromRounds(10L);
+
+        assertTrue(trip.getStatus() == TripStatus.IN_PROGRESS);
+        verify(tripRepository).save(trip);
+    }
+
+    @Test
+    void refreshTripStatusFromRounds_completeTripRemainsComplete() {
+        Trip trip = trip("MYR26");
+        trip.setInitialized(Boolean.TRUE);
+        trip.setStatus(TripStatus.COMPLETE);
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+
+        tripService.refreshTripStatusFromRounds(10L);
+
+        assertTrue(trip.getStatus() == TripStatus.COMPLETE);
+        verify(tripRepository).save(trip);
+    }
+
     private TripSetupRequest validSetupRequest() {
         TripSetupRequest request = new TripSetupRequest();
         request.setTripCode("MYR26");
@@ -201,6 +314,25 @@ class TripServiceTest {
         request.setTripYear(2026);
         request.setPlayerIds(Collections.emptyList());
         return request;
+    }
+
+    private TripPlayer tripPlayer(Trip trip, Long playerId) {
+        com.myrtletrip.player.entity.Player player = new com.myrtletrip.player.entity.Player();
+        player.setId(playerId);
+        player.setDisplayName("Player " + playerId);
+        player.setActive(true);
+        TripPlayer tripPlayer = new TripPlayer();
+        tripPlayer.setTrip(trip);
+        tripPlayer.setPlayer(player);
+        tripPlayer.setDisplayOrder(1);
+        return tripPlayer;
+    }
+
+    private Round round(Long roundId, boolean finalized) {
+        Round round = mock(Round.class);
+        when(round.getId()).thenReturn(roundId);
+        when(round.getFinalized()).thenReturn(finalized);
+        return round;
     }
 
     private Trip trip(String tripCode) {
