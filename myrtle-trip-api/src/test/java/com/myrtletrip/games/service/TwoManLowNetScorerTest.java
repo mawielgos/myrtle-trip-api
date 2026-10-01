@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class TwoManLowNetScorerTest {
 
     @Test
-    void scoreRound_shouldUseBothPlayersNetScoresEachHole() {
+    void scoreRound_shouldUseLowerPlayerNetScoreEachHole() {
         TwoManLowNetScorer scorer = new TwoManLowNetScorer();
 
         RoundScoringData data = new RoundScoringData();
@@ -49,8 +49,8 @@ public class TwoManLowNetScorerTest {
         TeamGameResult team1 = findTeam(result, 1L);
         TeamGameResult team2 = findTeam(result, 2L);
 
-        assertEquals(162, team1.getTotalNet());
-        assertEquals(198, team2.getTotalNet());
+        assertEquals(72, team1.getTotalNet());
+        assertEquals(90, team2.getTotalNet());
 
         assertEquals(18, team1.getTotalPoints());
         assertEquals(0, team2.getTotalPoints());
@@ -59,7 +59,7 @@ public class TwoManLowNetScorerTest {
         assertEquals(2, team2.getPlacement());
 
         HoleGameResult hole1 = findHole(team1, 1);
-        assertEquals(9, hole1.getNetScore());
+        assertEquals(4, hole1.getNetScore());
         assertEquals(1, hole1.getPoints());
     }
 
