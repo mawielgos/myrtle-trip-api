@@ -39,6 +39,8 @@ import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scorehistory.repository.ScoreHistoryEntryRepository;
 import com.myrtletrip.tournament.repository.TripTournamentRepository;
 import com.myrtletrip.tournament.repository.TripTournamentRoundRepository;
+import com.myrtletrip.trip.dto.SaveTripPlannedRoundsRequest;
+import com.myrtletrip.trip.dto.TripPlannedRoundResponse;
 import com.myrtletrip.trip.dto.TripSetupRequest;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripStatus;
@@ -79,6 +81,8 @@ class TripServiceTest {
     @Mock private TripParticipationService tripParticipationService;
     @Mock private TripLifecycleService tripLifecycleService;
     @Mock private TripGhinInitializationService tripGhinInitializationService;
+    @Mock private TripStatusService tripStatusService;
+    @Mock private TripPlannedRoundService tripPlannedRoundService;
 
     @InjectMocks
     private TripService tripService;
@@ -158,29 +162,44 @@ class TripServiceTest {
     }
 
     @Test
-    void refreshTripStatusFromRounds_initializedTripBecomesInProgress() {
-        Trip trip = trip("MYR26");
-        trip.setInitialized(Boolean.TRUE);
-        trip.setStatus(TripStatus.PLANNING);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-
+    void refreshTripStatusFromRounds_delegatesToStatusService() {
         tripService.refreshTripStatusFromRounds(10L);
 
-        assertTrue(trip.getStatus() == TripStatus.IN_PROGRESS);
-        verify(tripRepository).save(trip);
+        verify(tripStatusService).refreshTripStatusFromRounds(10L);
     }
 
     @Test
-    void refreshTripStatusFromRounds_completeTripRemainsComplete() {
-        Trip trip = trip("MYR26");
-        trip.setInitialized(Boolean.TRUE);
-        trip.setStatus(TripStatus.COMPLETE);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+    void findCurrentRoundEntity_delegatesToStatusService() {
+        Round currentRound = mock(Round.class);
+        when(tripStatusService.findCurrentRoundEntity(10L)).thenReturn(currentRound);
 
-        tripService.refreshTripStatusFromRounds(10L);
+        Round result = tripService.findCurrentRoundEntity(10L);
 
-        assertTrue(trip.getStatus() == TripStatus.COMPLETE);
-        verify(tripRepository).save(trip);
+        assertTrue(result == currentRound);
+        verify(tripStatusService).findCurrentRoundEntity(10L);
+    }
+
+    @Test
+    void getPlannedRounds_delegatesToPlannedRoundService() {
+        List<TripPlannedRoundResponse> expected = Collections.emptyList();
+        when(tripPlannedRoundService.getPlannedRounds(10L)).thenReturn(expected);
+
+        List<TripPlannedRoundResponse> result = tripService.getPlannedRounds(10L);
+
+        assertTrue(result == expected);
+        verify(tripPlannedRoundService).getPlannedRounds(10L);
+    }
+
+    @Test
+    void savePlannedRounds_delegatesToPlannedRoundService() {
+        SaveTripPlannedRoundsRequest request = new SaveTripPlannedRoundsRequest();
+        List<TripPlannedRoundResponse> expected = Collections.emptyList();
+        when(tripPlannedRoundService.savePlannedRounds(10L, request)).thenReturn(expected);
+
+        List<TripPlannedRoundResponse> result = tripService.savePlannedRounds(10L, request);
+
+        assertTrue(result == expected);
+        verify(tripPlannedRoundService).savePlannedRounds(10L, request);
     }
 
     private TripSetupRequest validSetupRequest() {
