@@ -1,5 +1,7 @@
 package com.myrtletrip.games.service;
 
+import com.myrtletrip.event.entity.RoundEvent;
+import com.myrtletrip.event.model.RoundEventType;
 import com.myrtletrip.event.service.RoundEventService;
 import com.myrtletrip.games.dto.RoundGameResult;
 import com.myrtletrip.games.dto.TeamGameResult;
@@ -25,8 +27,13 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 public class RoundGameScoringServiceTest {
 
@@ -47,11 +54,12 @@ public class RoundGameScoringServiceTest {
         RoundGameScoringService service = new RoundGameScoringService(
                 roundRepository,
                 roundScoringDataService,
-                scorecardRepository,
-                holeScoreRepository,
                 new RoundGameScorerRegistry(scorers),
                 roundEventService,
-                tripEditingGuardService
+                tripEditingGuardService,
+                new RoundIndividualStrokePlayResultService(),
+                new RoundTeamGameResultService(),
+                new RoundUsedHoleScoreService(scorecardRepository, holeScoreRepository)
         );
 
         Round round = mock(Round.class);
@@ -139,11 +147,12 @@ public class RoundGameScoringServiceTest {
         RoundGameScoringService service = new RoundGameScoringService(
                 roundRepository,
                 roundScoringDataService,
-                scorecardRepository,
-                holeScoreRepository,
                 new RoundGameScorerRegistry(scorers),
                 roundEventService,
-                tripEditingGuardService
+                tripEditingGuardService,
+                new RoundIndividualStrokePlayResultService(),
+                new RoundTeamGameResultService(),
+                new RoundUsedHoleScoreService(scorecardRepository, holeScoreRepository)
         );
 
         Round round = mock(Round.class);
@@ -198,6 +207,214 @@ public class RoundGameScoringServiceTest {
         assertTrue(findHoleScore(allHoleScores, 1002L, 18).getUsedInTeamGame());
         assertTrue(findHoleScore(allHoleScores, 1003L, 18).getUsedInTeamGame());
         assertFalse(findHoleScore(allHoleScores, 1004L, 18).getUsedInTeamGame());
+    }
+
+    @Test
+    void getRoundResult_shouldBuildIndividualStrokePlayAndAssignTiedPlacements() {
+        Long roundId = 700L;
+
+        RoundRepository roundRepository = mock(RoundRepository.class);
+        RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
+        ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
+        HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        RoundEventService roundEventService = mock(RoundEventService.class);
+        TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
+
+        RoundGameScoringService service = new RoundGameScoringService(
+                roundRepository,
+                roundScoringDataService,
+                new RoundGameScorerRegistry(new ArrayList<RoundGameScorer>()),
+                roundEventService,
+                tripEditingGuardService,
+                new RoundIndividualStrokePlayResultService(),
+                new RoundTeamGameResultService(),
+                new RoundUsedHoleScoreService(scorecardRepository, holeScoreRepository)
+        );
+
+        Round round = mock(Round.class);
+        when(round.getId()).thenReturn(roundId);
+        when(round.getFormat()).thenReturn(RoundFormat.STROKE_PLAY);
+        when(roundRepository.findById(roundId)).thenReturn(Optional.of(round));
+        when(roundEventService.findActiveEventsForRound(roundId)).thenReturn(new ArrayList<RoundEvent>());
+
+        RoundScoringData data = new RoundScoringData();
+        data.setRoundId(roundId);
+        data.setFormat(RoundFormat.STROKE_PLAY);
+
+        TeamScoringData group = new TeamScoringData();
+        group.setTeamId(1L);
+        group.setTeamName("Group 1");
+        group.setPlayers(List.of(
+                buildIndividualPlayer(1L, "Alice", 75, 70),
+                buildIndividualPlayer(2L, "Bob", 76, 70),
+                buildIndividualPlayer(3L, "Charlie", 80, 72)
+        ));
+        data.setTeams(List.of(group));
+        when(roundScoringDataService.build(round)).thenReturn(data);
+
+        RoundGameResult result = service.getRoundResult(roundId);
+
+        assertEquals(3, result.getTeams().size());
+        assertEquals("Alice", result.getTeams().get(0).getTeamName());
+        assertEquals(1, result.getTeams().get(0).getPlacement());
+        assertEquals("Bob", result.getTeams().get(1).getTeamName());
+        assertEquals(1, result.getTeams().get(1).getPlacement());
+        assertEquals("Charlie", result.getTeams().get(2).getTeamName());
+        assertEquals(3, result.getTeams().get(2).getPlacement());
+    }
+
+    @Test
+    void getRoundResult_shouldReturnUnscoredTeamRowsWhenRequiredScoresAreIncomplete() {
+        Long roundId = 710L;
+
+        RoundRepository roundRepository = mock(RoundRepository.class);
+        RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
+        ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
+        HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        RoundEventService roundEventService = mock(RoundEventService.class);
+        TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
+        RoundGameScorer scorer = mock(RoundGameScorer.class);
+        when(scorer.supports()).thenReturn(RoundEventType.TEAM_THREE_LOW_NET);
+
+        RoundGameScoringService service = new RoundGameScoringService(
+                roundRepository,
+                roundScoringDataService,
+                new RoundGameScorerRegistry(List.of(scorer)),
+                roundEventService,
+                tripEditingGuardService,
+                new RoundIndividualStrokePlayResultService(),
+                new RoundTeamGameResultService(),
+                new RoundUsedHoleScoreService(scorecardRepository, holeScoreRepository)
+        );
+
+        Round round = mock(Round.class);
+        when(round.getId()).thenReturn(roundId);
+        when(round.getFormat()).thenReturn(RoundFormat.THREE_LOW_NET);
+        when(roundRepository.findById(roundId)).thenReturn(Optional.of(round));
+        when(roundEventService.findActiveEventsForRound(roundId)).thenReturn(new ArrayList<RoundEvent>());
+
+        RoundScoringData data = new RoundScoringData();
+        data.setRoundId(roundId);
+        data.setFormat(RoundFormat.THREE_LOW_NET);
+        TeamScoringData team = new TeamScoringData();
+        team.setTeamId(9L);
+        team.setTeamName("Team 9");
+        team.setPlayers(List.of(
+                buildPlayer(91L, 1091L, "P1", new int[]{4}),
+                buildPlayer(92L, 1092L, "P2", new int[]{5})
+        ));
+        data.setTeams(List.of(team));
+        when(roundScoringDataService.build(round)).thenReturn(data);
+
+        RoundGameResult result = service.getRoundResult(roundId);
+
+        assertEquals(1, result.getTeams().size());
+        assertEquals(9L, result.getTeams().get(0).getTeamId());
+        assertEquals("Team 9", result.getTeams().get(0).getTeamName());
+        assertEquals(0, result.getTeams().get(0).getTotalNet());
+        verify(scorer, never()).scoreRound(data);
+    }
+
+    @Test
+    void getRoundResult_shouldRejectExplicitEventTypeThatIsNotActiveForRound() {
+        Long roundId = 720L;
+
+        RoundRepository roundRepository = mock(RoundRepository.class);
+        RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
+        ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
+        HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        RoundEventService roundEventService = mock(RoundEventService.class);
+        TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
+
+        RoundGameScoringService service = new RoundGameScoringService(
+                roundRepository,
+                roundScoringDataService,
+                new RoundGameScorerRegistry(new ArrayList<RoundGameScorer>()),
+                roundEventService,
+                tripEditingGuardService,
+                new RoundIndividualStrokePlayResultService(),
+                new RoundTeamGameResultService(),
+                new RoundUsedHoleScoreService(scorecardRepository, holeScoreRepository)
+        );
+
+        Round round = mock(Round.class);
+        when(round.getId()).thenReturn(roundId);
+        when(round.getFormat()).thenReturn(RoundFormat.STROKE_PLAY);
+        when(roundRepository.findById(roundId)).thenReturn(Optional.of(round));
+
+        RoundEvent individual = new RoundEvent();
+        individual.setEventType(RoundEventType.INDIVIDUAL_LOW_NET);
+        when(roundEventService.findActiveEventsForRound(roundId)).thenReturn(List.of(individual));
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.getRoundResult(roundId, RoundEventType.TEAM_SCRAMBLE)
+        );
+
+        assertTrue(error.getMessage().contains("does not have active event type TEAM_SCRAMBLE"));
+    }
+
+    @Test
+    void recalculateRoundEvents_shouldProcessEveryActiveEventAndApplyCorrectionGuard() {
+        Long roundId = 730L;
+
+        RoundRepository roundRepository = mock(RoundRepository.class);
+        RoundScoringDataService roundScoringDataService = mock(RoundScoringDataService.class);
+        ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
+        HoleScoreRepository holeScoreRepository = mock(HoleScoreRepository.class);
+        RoundEventService roundEventService = mock(RoundEventService.class);
+        TripEditingGuardService tripEditingGuardService = mock(TripEditingGuardService.class);
+
+        RoundGameScoringService service = new RoundGameScoringService(
+                roundRepository,
+                roundScoringDataService,
+                new RoundGameScorerRegistry(new ArrayList<RoundGameScorer>()),
+                roundEventService,
+                tripEditingGuardService,
+                new RoundIndividualStrokePlayResultService(),
+                new RoundTeamGameResultService(),
+                new RoundUsedHoleScoreService(scorecardRepository, holeScoreRepository)
+        );
+
+        Round round = mock(Round.class);
+        when(round.getId()).thenReturn(roundId);
+        when(round.getFormat()).thenReturn(RoundFormat.STROKE_PLAY);
+        when(roundRepository.findById(roundId)).thenReturn(Optional.of(round));
+
+        RoundEvent lowNet = new RoundEvent();
+        lowNet.setEventType(RoundEventType.INDIVIDUAL_LOW_NET);
+        RoundEvent lowGross = new RoundEvent();
+        lowGross.setEventType(RoundEventType.INDIVIDUAL_LOW_GROSS);
+        when(roundEventService.findActiveEventsForRound(roundId)).thenReturn(List.of(lowNet, lowGross));
+
+        RoundScoringData data = new RoundScoringData();
+        data.setRoundId(roundId);
+        data.setFormat(RoundFormat.STROKE_PLAY);
+        data.setTeams(new ArrayList<TeamScoringData>());
+        when(roundScoringDataService.build(round)).thenReturn(data);
+        when(holeScoreRepository.findByScorecard_Round_Id(roundId)).thenReturn(new ArrayList<HoleScore>());
+
+        List<RoundGameResult> results = service.recalculateRoundEvents(roundId);
+
+        assertEquals(2, results.size());
+        assertEquals(roundId, results.get(0).getRoundId());
+        assertEquals(roundId, results.get(1).getRoundId());
+        verify(roundScoringDataService, times(2)).build(round);
+        verify(tripEditingGuardService, times(3)).assertCorrectionAllowedForRound(round);
+        verify(holeScoreRepository, times(2)).saveAll(new ArrayList<HoleScore>());
+    }
+
+    private PlayerScoringData buildIndividualPlayer(Long playerId, String name, int gross, int net) {
+        PlayerScoringData player = new PlayerScoringData();
+        player.setPlayerId(playerId);
+        player.setPlayerName(name);
+
+        PlayerHoleScoringData hole = new PlayerHoleScoringData();
+        hole.setHoleNumber(1);
+        hole.setGross(gross);
+        hole.setNet(net);
+        player.setHoles(List.of(hole));
+        return player;
     }
 
     private RoundScoringData buildOneTwoThreeRoundData(Long roundId) {
