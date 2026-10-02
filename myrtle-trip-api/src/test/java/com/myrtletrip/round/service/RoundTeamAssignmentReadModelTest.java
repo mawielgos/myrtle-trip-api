@@ -220,10 +220,8 @@ class RoundTeamAssignmentReadModelTest {
                 mock(RoundEventCapabilityService.class);
         private final RoundScrambleSeedingService scrambleSeedingService =
                 mock(RoundScrambleSeedingService.class);
-        private final RoundParticipationService roundParticipationService =
-                mock(RoundParticipationService.class);
 
-        private final RoundTeamAssignmentService service = new RoundTeamAssignmentService(
+        private final RoundTeamAssignmentReadModelService service = new RoundTeamAssignmentReadModelService(
                 roundRepository,
                 roundTeamRepository,
                 roundTeamPlayerRepository,
@@ -235,8 +233,7 @@ class RoundTeamAssignmentReadModelTest {
                 tripPlayerRepository,
                 roundCapabilityService,
                 roundEventCapabilityService,
-                scrambleSeedingService,
-                roundParticipationService
+                scrambleSeedingService
         );
     }
 }
