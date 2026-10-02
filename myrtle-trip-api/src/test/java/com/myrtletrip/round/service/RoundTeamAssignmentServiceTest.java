@@ -9,16 +9,12 @@ import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.entity.RoundTeamPlayer;
 import com.myrtletrip.round.repository.RoundRepository;
-import com.myrtletrip.round.repository.RoundScrambleSeedRoundRepository;
 import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
 import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.entity.Scorecard;
 import com.myrtletrip.scoreentry.model.ScorecardParticipationStatus;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
-import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
-import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
-import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
 import com.myrtletrip.trip.repository.TripPlayerRepository;
 import org.junit.jupiter.api.Test;
 
@@ -204,18 +200,13 @@ class RoundTeamAssignmentServiceTest {
         private final RoundTeamPlayerRepository roundTeamPlayerRepository = mock(RoundTeamPlayerRepository.class);
         private final RoundTeeRepository roundTeeRepository = mock(RoundTeeRepository.class);
         private final ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
-        private final TeamHoleScoreRepository teamHoleScoreRepository = mock(TeamHoleScoreRepository.class);
         private final RoundTeeResolver roundTeeResolver = mock(RoundTeeResolver.class);
         private final RoundTeeProvisioningService roundTeeProvisioningService = mock(RoundTeeProvisioningService.class);
         private final TripHandicapService tripHandicapService = mock(TripHandicapService.class);
         private final TripPlayerRepository tripPlayerRepository = mock(TripPlayerRepository.class);
-        private final TripPlannedRoundRepository tripPlannedRoundRepository = mock(TripPlannedRoundRepository.class);
-        private final RoundScrambleSeedRoundRepository roundScrambleSeedRoundRepository =
-                mock(RoundScrambleSeedRoundRepository.class);
-        private final TripPlannedRoundEventRepository tripPlannedRoundEventRepository =
-                mock(TripPlannedRoundEventRepository.class);
         private final RoundCapabilityService roundCapabilityService = mock(RoundCapabilityService.class);
         private final RoundEventCapabilityService roundEventCapabilityService = mock(RoundEventCapabilityService.class);
+        private final RoundScrambleSeedingService roundScrambleSeedingService = mock(RoundScrambleSeedingService.class);
 
         private final RoundTeamAssignmentPageResponse pageResponse = new RoundTeamAssignmentPageResponse();
 
@@ -225,16 +216,13 @@ class RoundTeamAssignmentServiceTest {
                 roundTeamPlayerRepository,
                 roundTeeRepository,
                 scorecardRepository,
-                teamHoleScoreRepository,
                 roundTeeResolver,
                 roundTeeProvisioningService,
                 tripHandicapService,
                 tripPlayerRepository,
-                tripPlannedRoundRepository,
-                roundScrambleSeedRoundRepository,
-                tripPlannedRoundEventRepository,
                 roundCapabilityService,
-                roundEventCapabilityService
+                roundEventCapabilityService,
+                roundScrambleSeedingService
         ));
 
         private Fixture() {

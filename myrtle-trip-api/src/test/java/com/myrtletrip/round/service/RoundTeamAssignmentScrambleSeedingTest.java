@@ -1,24 +1,19 @@
 package com.myrtletrip.round.service;
 
-import com.myrtletrip.handicap.service.TripHandicapService;
 import com.myrtletrip.permissions.service.RoundCapabilityService;
-import com.myrtletrip.round.dto.RoundTeamAssignmentPageResponse;
 import com.myrtletrip.round.dto.SaveRoundScrambleSeedingRequest;
 import com.myrtletrip.round.entity.Round;
 import com.myrtletrip.round.entity.RoundScrambleSeedRound;
 import com.myrtletrip.round.entity.RoundTeam;
 import com.myrtletrip.round.repository.RoundRepository;
 import com.myrtletrip.round.repository.RoundScrambleSeedRoundRepository;
-import com.myrtletrip.round.repository.RoundTeamPlayerRepository;
 import com.myrtletrip.round.repository.RoundTeamRepository;
-import com.myrtletrip.round.repository.RoundTeeRepository;
 import com.myrtletrip.scoreentry.repository.ScorecardRepository;
 import com.myrtletrip.scoreentry.repository.TeamHoleScoreRepository;
 import com.myrtletrip.trip.entity.Trip;
 import com.myrtletrip.trip.entity.TripPlannedRound;
 import com.myrtletrip.trip.repository.TripPlannedRoundEventRepository;
 import com.myrtletrip.trip.repository.TripPlannedRoundRepository;
-import com.myrtletrip.trip.repository.TripPlayerRepository;
 import com.myrtletrip.round.model.RoundFormat;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,11 +25,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -116,10 +108,8 @@ class RoundTeamAssignmentScrambleSeedingTest {
         when(fixture.roundEventCapabilityService.isScrambleRound(round)).thenReturn(true);
         when(fixture.tripPlannedRoundRepository.findByTrip_IdOrderByRoundNumberAsc(2L)).thenReturn(List.of());
 
-        RoundTeamAssignmentPageResponse result =
-                fixture.service.saveScrambleSeedingRounds(43L, request);
+        fixture.service.saveScrambleSeedingRounds(43L, request);
 
-        assertSame(fixture.pageResponse, result);
         verify(round).setScrambleSeedingMethod("CURRENT_HANDICAP_INDEX");
         verify(fixture.roundRepository).save(round);
         verify(fixture.roundScrambleSeedRoundRepository).deleteByScrambleRound_Id(43L);
@@ -198,14 +188,8 @@ class RoundTeamAssignmentScrambleSeedingTest {
     private static final class Fixture {
         private final RoundRepository roundRepository = mock(RoundRepository.class);
         private final RoundTeamRepository roundTeamRepository = mock(RoundTeamRepository.class);
-        private final RoundTeamPlayerRepository roundTeamPlayerRepository = mock(RoundTeamPlayerRepository.class);
-        private final RoundTeeRepository roundTeeRepository = mock(RoundTeeRepository.class);
         private final ScorecardRepository scorecardRepository = mock(ScorecardRepository.class);
         private final TeamHoleScoreRepository teamHoleScoreRepository = mock(TeamHoleScoreRepository.class);
-        private final RoundTeeResolver roundTeeResolver = mock(RoundTeeResolver.class);
-        private final RoundTeeProvisioningService roundTeeProvisioningService = mock(RoundTeeProvisioningService.class);
-        private final TripHandicapService tripHandicapService = mock(TripHandicapService.class);
-        private final TripPlayerRepository tripPlayerRepository = mock(TripPlayerRepository.class);
         private final TripPlannedRoundRepository tripPlannedRoundRepository = mock(TripPlannedRoundRepository.class);
         private final RoundScrambleSeedRoundRepository roundScrambleSeedRoundRepository =
                 mock(RoundScrambleSeedRoundRepository.class);
@@ -214,28 +198,16 @@ class RoundTeamAssignmentScrambleSeedingTest {
         private final RoundCapabilityService roundCapabilityService = mock(RoundCapabilityService.class);
         private final RoundEventCapabilityService roundEventCapabilityService = mock(RoundEventCapabilityService.class);
 
-        private final RoundTeamAssignmentPageResponse pageResponse = new RoundTeamAssignmentPageResponse();
-
-        private final RoundTeamAssignmentService service = spy(new RoundTeamAssignmentService(
+        private final RoundScrambleSeedingService service = new RoundScrambleSeedingService(
                 roundRepository,
                 roundTeamRepository,
-                roundTeamPlayerRepository,
-                roundTeeRepository,
                 scorecardRepository,
                 teamHoleScoreRepository,
-                roundTeeResolver,
-                roundTeeProvisioningService,
-                tripHandicapService,
-                tripPlayerRepository,
                 tripPlannedRoundRepository,
                 roundScrambleSeedRoundRepository,
                 tripPlannedRoundEventRepository,
                 roundCapabilityService,
                 roundEventCapabilityService
-        ));
-
-        private Fixture() {
-            doReturn(pageResponse).when(service).getAssignmentPage(anyLong());
-        }
+        );
     }
 }
