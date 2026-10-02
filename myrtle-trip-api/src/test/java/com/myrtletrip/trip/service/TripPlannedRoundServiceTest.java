@@ -57,12 +57,16 @@ class TripPlannedRoundServiceTest {
                         courseTeeRepository,
                         courseHoleRepository,
                         courseTeeComboHoleRepository);
+        TripPlannedRoundReadModelService readModelService =
+                new TripPlannedRoundReadModelService(
+                        tripRepository,
+                        tripPlannedRoundRepository,
+                        tripPlannedRoundEventRepository,
+                        courseRepository,
+                        courseTeeRepository,
+                        lifecycleService);
         service = new TripPlannedRoundService(
-                tripRepository,
-                tripPlannedRoundRepository,
-                tripPlannedRoundEventRepository,
-                courseRepository,
-                courseTeeRepository,
+                readModelService,
                 lifecycleService,
                 commandService);
     }
