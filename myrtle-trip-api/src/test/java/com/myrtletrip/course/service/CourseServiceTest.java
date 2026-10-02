@@ -1,12 +1,10 @@
 package com.myrtletrip.course.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.never;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,19 +12,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.myrtletrip.course.dto.SaveCourseRequest;
-import com.myrtletrip.course.repository.CourseHoleRepository;
-import com.myrtletrip.course.repository.CourseRepository;
-import com.myrtletrip.course.repository.CourseTeeComboHoleRepository;
-import com.myrtletrip.course.repository.CourseTeeRepository;
+import com.myrtletrip.course.dto.CourseDetailResponse;
+import com.myrtletrip.course.dto.CourseListResponse;
 
 @ExtendWith(MockitoExtension.class)
 class CourseServiceTest {
 
-    @Mock private CourseHoleRepository courseHoleRepository;
-    @Mock private CourseRepository courseRepository;
-    @Mock private CourseTeeRepository courseTeeRepository;
-    @Mock private CourseTeeComboHoleRepository courseTeeComboHoleRepository;
+    @Mock private CourseCatalogService courseCatalogService;
     @Mock private CourseTeeService courseTeeService;
     @Mock private CourseHoleService courseHoleService;
     @Mock private CourseComboTeeService courseComboTeeService;
@@ -35,37 +27,20 @@ class CourseServiceTest {
     private CourseService courseService;
 
     @Test
-    void createCourse_requiresRequest() {
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> courseService.createCourse(null));
+    void getActiveCourses_delegatesToCatalogService() {
+        List<CourseListResponse> expected = List.of(new CourseListResponse());
+        when(courseCatalogService.getActiveCourses()).thenReturn(expected);
 
-        assertEquals("Course request is required", error.getMessage());
-        verify(courseRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        assertSame(expected, courseService.getActiveCourses());
+        verify(courseCatalogService).getActiveCourses();
     }
 
     @Test
-    void createCourse_requiresName() {
-        SaveCourseRequest request = new SaveCourseRequest();
-        request.setCourseName("   ");
+    void getCourseDetail_delegatesToCatalogService() {
+        CourseDetailResponse expected = org.mockito.Mockito.mock(CourseDetailResponse.class);
+        when(courseCatalogService.getCourseDetail(10L)).thenReturn(expected);
 
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> courseService.createCourse(request));
-
-        assertEquals("Course name is required", error.getMessage());
-    }
-
-    @Test
-    void createCourse_rejectsDuplicateNameIgnoringCase() {
-        SaveCourseRequest request = new SaveCourseRequest();
-        request.setCourseName("Pine Lakes");
-        when(courseRepository.existsByNameIgnoreCase("Pine Lakes")).thenReturn(true);
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> courseService.createCourse(request));
-
-        assertEquals("Course name already exists", error.getMessage());
+        assertSame(expected, courseService.getCourseDetail(10L));
+        verify(courseCatalogService).getCourseDetail(10L);
     }
 }
