@@ -1,0 +1,16 @@
+# Isolated local-only backend profile for Playwright integration tests.
+# Never inherit MYRTLE_DB_URL from ordinary DEV; a fixed URL avoids ambiguity.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/myrtle_trip_e2e_test
+    username: ${MYRTLE_E2E_DB_USERNAME:myrtle_app}
+    password: ${MYRTLE_E2E_DB_PASSWORD}
+  flyway:
+    enabled: true
+    clean-disabled: true
+    validate-on-migrate: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+server:
+  port: 8081
